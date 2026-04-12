@@ -5,7 +5,7 @@ import CoreGraphics
 class WindowManager {
     var root: Frame
     var focused: Frame
-    private var lastFocused: Frame?
+    private var lastWindow: WindowRef?
     let overlay = Overlay()
 
     /// Windows not currently assigned to any frame
@@ -23,10 +23,11 @@ class WindowManager {
         focused = root
     }
 
-    /// Change focus, tracking the previous frame for `focusLast`
+    /// Change focus, tracking the previous window for `focusLast`
     private func setFocus(_ frame: Frame) {
-        if focused !== frame {
-            lastFocused = focused
+        // Track the window we're leaving, not the frame
+        if let currentWin = focused.window, focused !== frame || frame.window != currentWin {
+            lastWindow = currentWin
         }
         focused = frame
         showFocusOverlay()
@@ -42,20 +43,35 @@ class WindowManager {
         overlay.showBorder(around: focused.rect)
     }
 
-    /// Switch to the previously focused frame (ratpoison's "last")
+    /// Switch to the last window (ratpoison's "last").
+    /// If the window is in another frame, focus that frame.
+    /// If the window is in the unmanaged pool, swap it into the current frame.
     func focusLast() {
-        guard let last = lastFocused else {
-            print("No previous frame")
+        guard let lastWin = lastWindow else {
+            print("No previous window")
             return
         }
-        // Verify the frame is still in the tree
-        guard root.leaves.contains(where: { $0 === last }) else {
-            print("Previous frame no longer exists")
-            lastFocused = nil
+
+        // Is it in a frame?
+        if let frame = root.leaves.first(where: { $0.window == lastWin }) {
+            setFocus(frame)
+            focused.window?.raise()
             return
         }
-        setFocus(last)
-        focused.window?.raise()
+
+        // Is it in the unmanaged pool? Swap it into the current frame.
+        if let idx = unmanaged.firstIndex(where: { $0 == lastWin }) {
+            let win = unmanaged.remove(at: idx)
+            if let current = focused.window {
+                unmanaged.insert(current, at: 0)
+            }
+            focused.content = .window(win)
+            applyLayout()
+            return
+        }
+
+        print("Previous window no longer exists")
+        lastWindow = nil
     }
 
     // MARK: - Auto-capture
@@ -186,10 +202,28 @@ class WindowManager {
         }
 
         if let current = focused.window {
+            lastWindow = current
             unmanaged.append(current)
         }
 
         let win = unmanaged.removeFirst()
+        focused.content = .window(win)
+        applyLayout()
+    }
+
+    /// Cycle to the previous window in the unmanaged pool (reverse of nextWindowInFrame)
+    func prevWindowInFrame() {
+        guard !unmanaged.isEmpty else {
+            print("No other windows")
+            return
+        }
+
+        if let current = focused.window {
+            lastWindow = current
+            unmanaged.insert(current, at: 0)
+        }
+
+        let win = unmanaged.removeLast()
         focused.content = .window(win)
         applyLayout()
     }

@@ -24,21 +24,23 @@ class KeyBinder {
     lazy var bindings: [CGKeyCode: Binding] = {
         return [
             // Split
-            CGKeyCode(kVK_ANSI_S): Binding(key: CGKeyCode(kVK_ANSI_S), action: { $0.splitHorizontal() }, description: "split horizontal"),
-            CGKeyCode(kVK_ANSI_V): Binding(key: CGKeyCode(kVK_ANSI_V), action: { $0.splitVertical() }, description: "split vertical"),
+            CGKeyCode(kVK_ANSI_S): Binding(key: CGKeyCode(kVK_ANSI_S), action: { $0.splitVertical() }, description: "split vertical"),
+            CGKeyCode(kVK_ANSI_V): Binding(key: CGKeyCode(kVK_ANSI_V), action: { $0.splitHorizontal() }, description: "split horizontal"),
 
-            // Focus
-            CGKeyCode(kVK_ANSI_N): Binding(key: CGKeyCode(kVK_ANSI_N), action: { $0.focusNext() }, description: "focus next"),
-            CGKeyCode(kVK_ANSI_P): Binding(key: CGKeyCode(kVK_ANSI_P), action: { $0.focusPrev() }, description: "focus prev"),
-            CGKeyCode(kVK_Tab):    Binding(key: CGKeyCode(kVK_Tab),    action: { $0.focusNext() }, description: "focus next"),
+            // Window cycling (next/prev window in current frame)
+            CGKeyCode(kVK_ANSI_N): Binding(key: CGKeyCode(kVK_ANSI_N), action: { $0.nextWindowInFrame() }, description: "next window"),
+            CGKeyCode(kVK_ANSI_P): Binding(key: CGKeyCode(kVK_ANSI_P), action: { $0.prevWindowInFrame() }, description: "prev window"),
+            CGKeyCode(kVK_Space):  Binding(key: CGKeyCode(kVK_Space),  action: { $0.nextWindowInFrame() }, description: "next window"),
+
+            // Frame navigation
+            CGKeyCode(kVK_Tab):    Binding(key: CGKeyCode(kVK_Tab),    action: { $0.focusNext() }, description: "next frame"),
 
             // Frame management
-            CGKeyCode(kVK_ANSI_Q): Binding(key: CGKeyCode(kVK_ANSI_Q), action: { $0.removeFrame() }, description: "remove frame"),
-            CGKeyCode(kVK_ANSI_O): Binding(key: CGKeyCode(kVK_ANSI_O), action: { $0.only() }, description: "only (remove all other frames)"),
+            CGKeyCode(kVK_ANSI_Q): Binding(key: CGKeyCode(kVK_ANSI_Q), action: { $0.only() }, description: "only (remove all other frames)"),
+            CGKeyCode(kVK_ANSI_O): Binding(key: CGKeyCode(kVK_ANSI_O), action: { $0.focusNext() }, description: "next frame"),
 
-            // Window management
-            CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.swapNext() }, description: "swap with next"),
-            CGKeyCode(kVK_Space):  Binding(key: CGKeyCode(kVK_Space),  action: { $0.nextWindowInFrame() }, description: "next window in frame"),
+            // Window/frame swap
+            CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.swapNext() }, description: "swap with next frame"),
 
             // Info
             CGKeyCode(kVK_ANSI_I): Binding(key: CGKeyCode(kVK_ANSI_I), action: { $0.printStatus() }, description: "show status"),
@@ -76,14 +78,22 @@ class KeyBinder {
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
+        let enabled = CGEvent.tapIsEnabled(tap: tap)
+        print("Event tap created, enabled: \(enabled)")
+        if !enabled {
+            print("⚠ Event tap is disabled. Check Input Monitoring permission:")
+            print("  System Settings → Privacy & Security → Input Monitoring")
+            print("  Add and enable your terminal (e.g. Alacritty).")
+        }
         print("Keybindings active. Prefix: Ctrl-t")
         printBindings()
         return true
     }
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Re-enable tap if it gets disabled (happens under heavy load)
+        // Re-enable tap if it gets disabled (Chrome and other apps can cause this)
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            print("⚠ Event tap was disabled (type=\(type.rawValue)), re-enabling...")
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
@@ -98,8 +108,6 @@ class KeyBinder {
         let flags = event.flags
 
         let ctrlHeld = flags.contains(.maskControl)
-
-        print("[key] code=\(keyCode) ctrl=\(ctrlHeld) waiting=\(waitingForCommand)")
 
         if waitingForCommand {
             waitingForCommand = false
@@ -116,6 +124,14 @@ class KeyBinder {
                     // Pass through as plain t
                     return Unmanaged.passUnretained(event)
                 }
+            }
+
+            // Shift-Tab → prev frame
+            if keyCode == CGKeyCode(kVK_Tab) && flags.contains(.maskShift) {
+                print(">> prev frame")
+                wm.focusPrev()
+                wm.printStatus()
+                return nil
             }
 
             // Look up binding by keyCode only — works whether ctrl is held or not
