@@ -98,6 +98,31 @@ class Frame {
         b.recalculateRects()
     }
 
+    /// Deep copy the frame tree. Returns (clonedRoot, focusedLeafIndex).
+    /// `focusedLeafIndex` is the index in `leaves` of `originalFocused`, or 0 if not found.
+    static func deepCopy(root: Frame, focused: Frame) -> (Frame, Int) {
+        let cloned = root.clone(parent: nil)
+        let origLeaves = root.leaves
+        let focusIdx = origLeaves.firstIndex(where: { $0 === focused }) ?? 0
+        return (cloned, focusIdx)
+    }
+
+    /// Clone this frame and all its children
+    private func clone(parent: Frame?) -> Frame {
+        let copy = Frame(rect: rect, parent: parent)
+        switch content {
+        case .empty:
+            copy.content = .empty
+        case .window(let w):
+            copy.content = .window(w)
+        case .split(let dir, let a, let b):
+            let aCopy = a.clone(parent: copy)
+            let bCopy = b.clone(parent: copy)
+            copy.content = .split(dir, aCopy, bCopy)
+        }
+        return copy
+    }
+
     /// Split a rect in half along the given direction
     private static func splitRect(_ rect: CGRect, direction: SplitDirection) -> (CGRect, CGRect) {
         switch direction {

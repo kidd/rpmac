@@ -11,6 +11,63 @@ class WindowManager {
     /// Windows not currently assigned to any frame
     var unmanaged: [WindowRef] = []
 
+    // MARK: - Undo/Redo
+
+    private struct Snapshot {
+        let root: Frame
+        let focusedLeafIndex: Int
+        let unmanaged: [WindowRef]
+    }
+
+    private var undoStack: [Snapshot] = []
+    private var redoStack: [Snapshot] = []
+    private let maxUndoLevels = 50
+
+    /// Save current state before a structural change
+    private func saveSnapshot() {
+        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
+        let snap = Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged)
+        undoStack.append(snap)
+        if undoStack.count > maxUndoLevels {
+            undoStack.removeFirst()
+        }
+        redoStack.removeAll()
+    }
+
+    /// Restore a snapshot
+    private func restore(_ snap: Snapshot) {
+        root = snap.root
+        unmanaged = snap.unmanaged
+        let leaves = root.leaves
+        let idx = min(snap.focusedLeafIndex, leaves.count - 1)
+        focused = leaves[max(idx, 0)]
+        applyLayout()
+    }
+
+    func undo() {
+        guard let snap = undoStack.popLast() else {
+            print("Nothing to undo")
+            return
+        }
+        // Save current state to redo stack
+        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
+        redoStack.append(Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged))
+        restore(snap)
+        print("Undo")
+    }
+
+    func redo() {
+        guard let snap = redoStack.popLast() else {
+            print("Nothing to redo")
+            return
+        }
+        // Save current state to undo stack
+        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
+        undoStack.append(Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged))
+        restore(snap)
+        print("Redo")
+    }
+
     init() {
         let screen = AccessibilityHelper.screenRect()
         let rect = CGRect(
@@ -99,6 +156,7 @@ class WindowManager {
     /// Current window stays in the left frame, next unmanaged window goes right.
     func splitHorizontal() {
         guard focused.isLeaf else { return }
+        saveSnapshot()
         let (left, right) = focused.split(direction: .horizontal)
         setFocus(left)
 
@@ -114,6 +172,7 @@ class WindowManager {
     /// Current window stays in the top frame, next unmanaged window goes bottom.
     func splitVertical() {
         guard focused.isLeaf else { return }
+        saveSnapshot()
         let (top, bottom) = focused.split(direction: .vertical)
         setFocus(top)
 
@@ -127,6 +186,7 @@ class WindowManager {
     /// Remove the focused frame, its sibling takes over.
     /// The window in the removed frame goes to the unmanaged pool.
     func removeFrame() {
+        saveSnapshot()
         // Save the window before removing
         if let win = focused.window {
             unmanaged.insert(win, at: 0)
@@ -142,6 +202,7 @@ class WindowManager {
 
     /// Remove all frames except the focused one (like ratpoison's "only")
     func only() {
+        saveSnapshot()
         // Collect all windows from other frames into unmanaged
         for leaf in root.leaves where leaf !== focused {
             if let win = leaf.window {

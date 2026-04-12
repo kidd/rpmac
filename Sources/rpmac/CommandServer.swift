@@ -101,6 +101,12 @@ class CommandServer {
         case "rescreen":
             wm.rescreen()
             wm.printStatus()
+        case "undo":
+            wm.undo()
+            wm.printStatus()
+        case "redo":
+            wm.redo()
+            wm.printStatus()
         case "status", "info":
             wm.printStatus()
         case "quit":

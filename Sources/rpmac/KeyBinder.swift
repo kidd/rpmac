@@ -42,6 +42,10 @@ class KeyBinder {
             // Window/frame swap
             CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.swapNext() }, description: "swap with next frame"),
 
+            // Undo/Redo
+            CGKeyCode(kVK_ANSI_U): Binding(key: CGKeyCode(kVK_ANSI_U), action: { $0.undo() }, description: "undo"),
+            CGKeyCode(kVK_ANSI_R): Binding(key: CGKeyCode(kVK_ANSI_R), action: { $0.redo() }, description: "redo"),
+
             // Info
             CGKeyCode(kVK_ANSI_I): Binding(key: CGKeyCode(kVK_ANSI_I), action: { $0.printStatus() }, description: "show status"),
         ]
@@ -179,6 +183,8 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_O): "o",
             CGKeyCode(kVK_ANSI_W): "w",
             CGKeyCode(kVK_ANSI_I): "i",
+            CGKeyCode(kVK_ANSI_U): "u",
+            CGKeyCode(kVK_ANSI_R): "r",
             CGKeyCode(kVK_ANSI_T): "t",
             CGKeyCode(kVK_Tab):    "Tab",
             CGKeyCode(kVK_Space):  "Space",
