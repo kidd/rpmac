@@ -22,6 +22,8 @@
 #   border-color <#hex>        — focus border color (default: system blue)
 #   overlay-duration <seconds> — how long the overlay shows (default: 0.7)
 #   warp <0|1>                 — warp mouse to focused window (default: 0)
+#   click-to-focus <app>       — app that needs a synthetic click to focus
+#                                (default: alacritty). Can be repeated.
 #
 # Default bindings:
 #   s         split vertical

@@ -59,13 +59,18 @@ struct WindowRef: Equatable {
         return CGRect(origin: pos, size: size)
     }
 
+    /// Apps that don't respond to AX focus changes and need a synthetic click
+    static var clickToFocusApps: Set<String> = ["alacritty"]
+
+    /// Whether this window's app needs a synthetic click to receive focus
+    private var needsClickToFocus: Bool {
+        guard let app = NSRunningApplication(processIdentifier: pid),
+              let name = app.localizedName?.lowercased() else { return false }
+        return Self.clickToFocusApps.contains(name)
+    }
+
     /// Raise this window to front and give it keyboard focus
     func raise(warp: Bool = false) {
-        if warp, let f = frame {
-            CGWarpMouseCursorPosition(CGPoint(x: f.midX, y: f.midY))
-            CGAssociateMouseAndMouseCursorPosition(1)
-        }
-
         // Activate the owning application
         let app = NSRunningApplication(processIdentifier: pid)
         app?.activate(options: [.activateIgnoringOtherApps])
@@ -77,5 +82,28 @@ struct WindowRef: Equatable {
         let appRef = AXUIElementCreateApplication(pid)
         AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, element)
         AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+
+        if warp, let f = frame {
+            CGWarpMouseCursorPosition(CGPoint(x: f.midX, y: f.midY))
+            CGAssociateMouseAndMouseCursorPosition(1)
+        } else if needsClickToFocus, let f = frame {
+            // Synthetic click for apps that don't respond to AX focus.
+            // Save cursor, warp, click, then warp back.
+            let clickPoint = CGPoint(x: f.midX, y: f.midY)
+            let savedPos = CGEvent(source: nil)?.location ?? clickPoint
+
+            CGWarpMouseCursorPosition(clickPoint)
+
+            if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickPoint, mouseButton: .left),
+               let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: clickPoint, mouseButton: .left) {
+                mouseDown.post(tap: .cgSessionEventTap)
+                mouseUp.post(tap: .cgSessionEventTap)
+            }
+
+            // Small delay so the click registers before we move the cursor back
+            usleep(50_000)
+            CGWarpMouseCursorPosition(savedPos)
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
     }
 }
