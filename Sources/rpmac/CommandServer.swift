@@ -5,6 +5,7 @@ import Foundation
 class CommandServer {
     let socketPath: String
     let wm: WindowManager
+    var keyBinder: KeyBinder?
     private var serverSocket: Int32 = -1
 
     init(socketPath: String = "/tmp/rpmac.sock", wm: WindowManager) {
@@ -132,6 +133,14 @@ class CommandServer {
             wm.printStatus()
         case "status", "info":
             wm.printStatus()
+        case "reload":
+            print("Reloading ~/.rpmacrc...")
+            let config = Config()
+            let parsed = config.parse()
+            if let kb = keyBinder {
+                config.apply(parsed: parsed, keyBinder: kb, wm: wm, server: self)
+            }
+            print("Config reloaded.")
         case "quit":
             print("Shutting down.")
             unlink(socketPath)

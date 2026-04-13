@@ -227,20 +227,75 @@ class WindowManager {
         lastWindow = nil
     }
 
+    // MARK: - Window creation watcher
+
+    private var watcher: WindowCreationWatcher?
+
+    func startWatchingForNewWindows() {
+        // Snapshot all existing AX window elements so we can ignore them in the observer
+        var knownElements: [AXUIElement] = []
+        for screen in screens {
+            for leaf in screen.root.leaves {
+                if let w = leaf.window { knownElements.append(w.element) }
+            }
+        }
+        for w in unmanaged { knownElements.append(w.element) }
+
+        let w = WindowCreationWatcher { [weak self] element, pid in
+            guard let self = self else { return }
+
+            // Skip pre-existing windows
+            if knownElements.contains(where: { CFEqual($0, element) }) { return }
+
+            let wref = WindowRef(pid: pid, element: element)
+            guard wref.isNormalWindow else { return }
+
+            // Skip if we already manage this window
+            for screen in self.screens {
+                for leaf in screen.root.leaves {
+                    if leaf.window == wref { return }
+                }
+            }
+            if self.unmanaged.contains(where: { $0 == wref }) { return }
+
+            print("New window: \(wref.title ?? "(untitled)")")
+
+            // Place into focused frame, pushing current window to unmanaged
+            if let current = self.focused.window {
+                self.unmanaged.insert(current, at: 0)
+            }
+            self.focused.content = .window(wref)
+            self.applyLayout()
+        }
+        w.start()
+        self.watcher = w
+    }
+
     // MARK: - Auto-capture
 
     func captureAllWindows() {
         let windows = AccessibilityHelper.allWindows()
         print("Found \(windows.count) windows")
 
-        // Put the first window on the first screen, rest in unmanaged
-        guard let first = windows.first else { return }
-        screens[0].focused.content = .window(first)
+        // Assign each window to the screen it's physically on.
+        // First window per screen goes into the focused frame, rest into unmanaged.
+        var placed = Set<Int>() // screen indices that already have a window
+        var remaining: [WindowRef] = []
 
-        for win in windows.dropFirst() {
-            unmanaged.append(win)
+        for win in windows {
+            if let winFrame = win.frame {
+                let winCenter = CGPoint(x: winFrame.midX, y: winFrame.midY)
+                if let screenIdx = screens.firstIndex(where: { $0.rect.contains(winCenter) }),
+                   !placed.contains(screenIdx) {
+                    screens[screenIdx].focused.content = .window(win)
+                    placed.insert(screenIdx)
+                    continue
+                }
+            }
+            remaining.append(win)
         }
 
+        unmanaged.append(contentsOf: remaining)
         applyAllLayouts()
     }
 

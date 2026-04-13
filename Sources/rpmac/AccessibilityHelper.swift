@@ -2,6 +2,81 @@ import Foundation
 import ApplicationServices
 import AppKit
 
+/// Observes AX window-created notifications for a single app and forwards them to a callback.
+class AppWindowObserver {
+    let pid: pid_t
+    let observer: AXObserver
+    let callback: (AXUIElement) -> Void
+
+    init?(pid: pid_t, callback: @escaping (AXUIElement) -> Void) {
+        self.pid = pid
+        self.callback = callback
+
+        var obs: AXObserver?
+        let err = AXObserverCreate(pid, { (_: AXObserver, element: AXUIElement, _: CFString, refcon: UnsafeMutableRawPointer?) in
+            guard let refcon = refcon else { return }
+            let observer = Unmanaged<AppWindowObserver>.fromOpaque(refcon).takeUnretainedValue()
+            observer.callback(element)
+        }, &obs)
+        guard err == .success, let observer = obs else { return nil }
+        self.observer = observer
+
+        let appRef = AXUIElementCreateApplication(pid)
+        AXObserverAddNotification(observer, appRef, kAXWindowCreatedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    }
+
+    deinit {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    }
+}
+
+/// Watches for new app launches and installs per-app AX observers.
+class WindowCreationWatcher {
+    private var observers: [pid_t: AppWindowObserver] = [:]
+    private var callback: (AXUIElement, pid_t) -> Void
+    private var workspaceObserver: NSObjectProtocol?
+
+    init(callback: @escaping (AXUIElement, pid_t) -> Void) {
+        self.callback = callback
+    }
+
+    func start() {
+        // Observe all currently running apps
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            watchApp(pid: app.processIdentifier)
+        }
+
+        // Observe newly launched apps
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.activationPolicy == .regular else { return }
+            self?.watchApp(pid: app.processIdentifier)
+        }
+
+        // Clean up terminated apps
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.observers.removeValue(forKey: app.processIdentifier)
+        }
+    }
+
+    private func watchApp(pid: pid_t) {
+        guard observers[pid] == nil else { return }
+        let cb = self.callback
+        if let obs = AppWindowObserver(pid: pid, callback: { element in cb(element, pid) }) {
+            observers[pid] = obs
+        }
+    }
+}
+
 enum AccessibilityHelper {
     /// Check if we have accessibility permissions
     static func checkPermissions() -> Bool {

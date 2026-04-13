@@ -22,6 +22,7 @@ let wm = WindowManager()
 
 // Auto-capture all existing windows
 wm.captureAllWindows()
+wm.startWatchingForNewWindows()
 wm.printStatus()
 print("")
 
@@ -34,6 +35,7 @@ if !keyBinder.start() {
 
 // Also start socket server for scripting
 let server = CommandServer(wm: wm)
+server.keyBinder = keyBinder
 keyBinder.commandServer = server
 
 // Handle clean shutdown

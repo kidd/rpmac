@@ -237,6 +237,7 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_M): "m",
             CGKeyCode(kVK_ANSI_Period): ".",
             CGKeyCode(kVK_ANSI_Comma): ",",
+
             CGKeyCode(kVK_ANSI_U): "u",
             CGKeyCode(kVK_ANSI_R): "r",
             CGKeyCode(kVK_ANSI_T): "t",

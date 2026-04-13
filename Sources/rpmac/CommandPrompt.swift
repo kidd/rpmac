@@ -24,7 +24,7 @@ class CommandPrompt: NSObject, NSTextFieldDelegate {
         "only", "remove",
         "capture", "release",
         "undo", "redo",
-        "rescreen",
+        "rescreen", "reload",
         "status",
         "quit",
     ]
