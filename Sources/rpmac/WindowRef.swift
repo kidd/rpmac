@@ -59,12 +59,23 @@ struct WindowRef: Equatable {
         return CGRect(origin: pos, size: size)
     }
 
-    /// Raise this window to front
-    func raise() {
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    /// Raise this window to front and give it keyboard focus
+    func raise(warp: Bool = false) {
+        if warp, let f = frame {
+            CGWarpMouseCursorPosition(CGPoint(x: f.midX, y: f.midY))
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
 
-        // Also activate the owning application
+        // Activate the owning application
         let app = NSRunningApplication(processIdentifier: pid)
         app?.activate(options: [.activateIgnoringOtherApps])
+
+        // Raise the window visually
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+
+        // Set this as the focused window of the application
+        let appRef = AXUIElementCreateApplication(pid)
+        AXUIElementSetAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, element)
+        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
     }
 }

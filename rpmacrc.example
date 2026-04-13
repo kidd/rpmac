@@ -1,0 +1,69 @@
+# ~/.rpmacrc — rpmac configuration file
+#
+# Format:
+#   bind <key> <command>       — bind key (after prefix) to a command
+#   unbind <key>               — remove a default binding
+#   escape <key>               — change prefix key (default: C-t)
+#   set <option> <value>       — change a setting
+#   <command>                  — run command at startup
+#
+# Key names:
+#   Letters: a-z
+#   Numbers: 0-9
+#   Symbols: ; : , . / \ - = space tab return escape delete
+#   Arrows:  left right up down
+#   Modifiers: C- (ctrl), S- (shift)  e.g. C-n, S-tab
+#
+# Settings:
+#   fgcolor <#hex>             — message bar text color (default: #ffffff)
+#   bgcolor <#hex>             — message bar background color (default: #333333)
+#   barpadding <pixels>        — message bar padding (default: 24)
+#   border-width <pixels>      — focus border width (default: 2)
+#   border-color <#hex>        — focus border color (default: system blue)
+#   overlay-duration <seconds> — how long the overlay shows (default: 0.7)
+#   warp <0|1>                 — warp mouse to focused window (default: 0)
+#
+# Default bindings:
+#   s         split vertical
+#   v         split horizontal
+#   n/space   next window (in current frame)
+#   p         prev window
+#   o/tab     next frame
+#   S-tab     prev frame
+#   .         next screen
+#   ,         prev screen
+#   m         move window to next screen
+#   q         only (remove all other frames)
+#   w         swap with next frame
+#   k         kill window
+#   b         banish mouse
+#   u         undo
+#   r         redo
+#   i         show status
+#   C-t       last (toggle previous window)
+#   :         command prompt
+#
+# Examples:
+#
+#   # Appearance
+#   set fgcolor #00ff00
+#   set bgcolor #000000
+#   set barpadding 16
+#   set border-color #ff0000
+#   set border-width 3
+#   set overlay-duration 0.5
+#   set warp 1
+#
+#   # Change prefix key to Ctrl-s
+#   escape C-s
+#
+#   # Custom bindings
+#   bind semicolon next-screen
+#   bind f next-frame
+#   bind b prev-frame
+#
+#   # Remove a default binding
+#   unbind w
+#
+#   # Startup commands (run on launch)
+#   split-h

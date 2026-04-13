@@ -93,6 +93,25 @@ class Config {
                     print("  overlay-duration = \(n)")
                     wm.overlay.displayDuration = n
                 }
+            case "fgcolor":
+                if let color = parseColor(value) {
+                    print("  fgcolor = \(value)")
+                    wm.overlay.fgColor = color
+                }
+            case "bgcolor":
+                if let color = parseColor(value) {
+                    print("  bgcolor = \(value)")
+                    wm.overlay.bgColor = color
+                }
+            case "barpadding":
+                if let n = Double(value) {
+                    print("  barpadding = \(n)")
+                    wm.overlay.barPadding = CGFloat(n)
+                }
+            case "warp":
+                let on = value == "1" || value.lowercased() == "true"
+                print("  warp = \(on)")
+                wm.warp = on
             default:
                 print("  Unknown setting: \(name)")
             }

@@ -23,6 +23,13 @@ class Overlay {
     /// How long the overlay stays visible (seconds)
     var displayDuration: TimeInterval = 0.7
 
+    /// Message bar colors (like ratpoison's fgcolor/bgcolor)
+    var fgColor: NSColor = .white
+    var bgColor: NSColor = NSColor(white: 0.2, alpha: 0.9)
+
+    /// Bar padding
+    var barPadding: CGFloat = 24
+
     /// Border appearance (applied to BorderView)
     var borderWidth: CGFloat = 2 {
         didSet { (borderWindow?.contentView as? BorderView)?.borderWidth = borderWidth }
@@ -122,20 +129,17 @@ class Overlay {
     private func configure(window: NSWindow, message: String, screenRect: NSRect) {
         let label = NSTextField(labelWithString: message)
         label.font = NSFont.monospacedSystemFont(ofSize: 18, weight: .bold)
-        label.textColor = .white
+        label.textColor = fgColor
         label.alignment = .center
         label.backgroundColor = .clear
         label.sizeToFit()
 
-        let padding: CGFloat = 24
-        let bgWidth = label.frame.width + padding * 2
-        let bgHeight = label.frame.height + padding
+        let bgWidth = label.frame.width + barPadding * 2
+        let bgHeight = label.frame.height + barPadding
 
-        let bg = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: bgWidth, height: bgHeight))
-        bg.material = .hudWindow
-        bg.state = .active
-        bg.blendingMode = .behindWindow
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: bgWidth, height: bgHeight))
         bg.wantsLayer = true
+        bg.layer?.backgroundColor = bgColor.cgColor
         bg.layer?.cornerRadius = 10
 
         label.frame.origin = NSPoint(
@@ -153,13 +157,19 @@ class Overlay {
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    /// Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
+    /// Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin).
+    /// In multi-monitor setups, the AX coordinate system uses the primary screen's top-left as (0,0).
+    /// Cocoa uses the primary screen's bottom-left as (0,0). Both share the same X axis.
+    /// The conversion only needs to flip Y using the primary screen's height.
     private func flipToCocoaCoordinates(_ rect: CGRect) -> NSRect {
-        guard let screen = NSScreen.main else { return NSRect(origin: .zero, size: rect.size) }
-        let fullHeight = screen.frame.height
+        // Primary screen is always NSScreen.screens[0]
+        guard let primaryScreen = NSScreen.screens.first else {
+            return NSRect(origin: .zero, size: rect.size)
+        }
+        let primaryHeight = primaryScreen.frame.height
         return NSRect(
             x: rect.origin.x,
-            y: fullHeight - rect.origin.y - rect.height,
+            y: primaryHeight - rect.origin.y - rect.height,
             width: rect.width,
             height: rect.height
         )

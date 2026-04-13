@@ -98,6 +98,8 @@ class CommandServer {
         case "swap":
             wm.swapNext()
             wm.printStatus()
+        case "banish":
+            wm.banish()
         case "kill":
             wm.killWindow()
             wm.printStatus()

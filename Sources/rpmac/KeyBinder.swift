@@ -50,6 +50,9 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_Comma):  Binding(key: CGKeyCode(kVK_ANSI_Comma),  action: { $0.focusPrevScreen() }, description: "prev screen"),
             CGKeyCode(kVK_ANSI_M):      Binding(key: CGKeyCode(kVK_ANSI_M),      action: { $0.moveWindowToNextScreen() }, description: "move window to next screen"),
 
+            // Mouse
+            CGKeyCode(kVK_ANSI_B): Binding(key: CGKeyCode(kVK_ANSI_B), action: { $0.banish() }, description: "banish mouse"),
+
             // Undo/Redo
             CGKeyCode(kVK_ANSI_U): Binding(key: CGKeyCode(kVK_ANSI_U), action: { $0.undo() }, description: "undo"),
             CGKeyCode(kVK_ANSI_R): Binding(key: CGKeyCode(kVK_ANSI_R), action: { $0.redo() }, description: "redo"),
@@ -229,6 +232,7 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_O): "o",
             CGKeyCode(kVK_ANSI_W): "w",
             CGKeyCode(kVK_ANSI_I): "i",
+            CGKeyCode(kVK_ANSI_B): "b",
             CGKeyCode(kVK_ANSI_K): "k",
             CGKeyCode(kVK_ANSI_M): "m",
             CGKeyCode(kVK_ANSI_Period): ".",

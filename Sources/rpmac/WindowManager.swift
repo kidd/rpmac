@@ -25,6 +25,9 @@ class WindowManager {
     let overlay = Overlay()
     let commandPrompt = CommandPrompt()
 
+    /// When true, warp mouse cursor to the center of the focused window on raise
+    var warp: Bool = false
+
     /// Windows not currently assigned to any frame
     var unmanaged: [WindowRef] = []
 
@@ -154,7 +157,7 @@ class WindowManager {
         guard screens.count > 1 else { return }
         currentScreenIndex = (currentScreenIndex + 1) % screens.count
         setFocus(focused)
-        focused.window?.raise()
+        focused.window?.raise(warp: warp)
     }
 
     /// Focus the previous screen
@@ -162,7 +165,7 @@ class WindowManager {
         guard screens.count > 1 else { return }
         currentScreenIndex = (currentScreenIndex - 1 + screens.count) % screens.count
         setFocus(focused)
-        focused.window?.raise()
+        focused.window?.raise(warp: warp)
     }
 
     /// Move the window in the focused frame to the next screen's focused frame
@@ -204,7 +207,7 @@ class WindowManager {
             if let frame = screen.root.leaves.first(where: { $0.window == lastWin }) {
                 currentScreenIndex = i
                 setFocus(frame)
-                focused.window?.raise()
+                focused.window?.raise(warp: warp)
                 return
             }
         }
@@ -297,7 +300,7 @@ class WindowManager {
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
         let next = (idx + 1) % leaves.count
         setFocus(leaves[next])
-        focused.window?.raise()
+        focused.window?.raise(warp: warp)
     }
 
     func focusPrev() {
@@ -305,7 +308,7 @@ class WindowManager {
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
         let prev = (idx - 1 + leaves.count) % leaves.count
         setFocus(leaves[prev])
-        focused.window?.raise()
+        focused.window?.raise(warp: warp)
     }
 
     func swapNext() {
@@ -390,13 +393,20 @@ class WindowManager {
 
     // MARK: - Layout
 
+    /// Move mouse to the bottom-right corner of the current screen
+    func banish() {
+        let rect = current.rect
+        let point = CGPoint(x: rect.maxX - 1, y: rect.maxY - 1)
+        CGWarpMouseCursorPosition(point)
+    }
+
     /// Apply layout for current screen only
     func applyLayout() {
         for leaf in root.leaves {
             if let win = leaf.window {
                 win.moveResize(to: leaf.rect)
                 if leaf === focused {
-                    win.raise()
+                    win.raise(warp: warp)
                 }
             }
         }
@@ -412,7 +422,7 @@ class WindowManager {
                 }
             }
         }
-        focused.window?.raise()
+        focused.window?.raise(warp: warp)
         overlay.showBorder(around: focused.rect)
     }
 
