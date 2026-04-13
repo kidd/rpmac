@@ -74,13 +74,22 @@ class CommandServer {
         case "split-v", "vsplit":
             wm.splitVertical()
             wm.printStatus()
-        case "remove", "only":
+        case "remove":
             wm.removeFrame()
             wm.printStatus()
-        case "next", "focus-next":
+        case "only":
+            wm.only()
+            wm.printStatus()
+        case "next":
+            wm.nextWindowInFrame()
+            wm.printStatus()
+        case "prev":
+            wm.prevWindowInFrame()
+            wm.printStatus()
+        case "next-frame":
             wm.focusNext()
             wm.printStatus()
-        case "prev", "focus-prev":
+        case "prev-frame":
             wm.focusPrev()
             wm.printStatus()
         case "last":
@@ -88,6 +97,9 @@ class CommandServer {
             wm.printStatus()
         case "swap":
             wm.swapNext()
+            wm.printStatus()
+        case "kill":
+            wm.killWindow()
             wm.printStatus()
         case "capture", "pull":
             wm.captureWindow()
@@ -97,6 +109,15 @@ class CommandServer {
             wm.printStatus()
         case "next-unmanaged":
             wm.nextWindowInFrame()
+            wm.printStatus()
+        case "next-screen":
+            wm.focusNextScreen()
+            wm.printStatus()
+        case "prev-screen":
+            wm.focusPrevScreen()
+            wm.printStatus()
+        case "move-to-screen":
+            wm.moveWindowToNextScreen()
             wm.printStatus()
         case "rescreen":
             wm.rescreen()

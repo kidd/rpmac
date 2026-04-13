@@ -8,11 +8,13 @@ import Carbon.HIToolbox
 /// Both `Ctrl-t <key>` and `Ctrl-t Ctrl-<key>` work (holding ctrl throughout).
 class KeyBinder {
     let wm: WindowManager
+    var commandServer: CommandServer?
     private var waitingForCommand = false
+    private var promptActive = false
     private var eventTap: CFMachPort?
 
     // Prefix key: Ctrl-t
-    let prefixKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_T)
+    var prefixKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_T)
 
     // Command bindings: key -> action
     struct Binding {
@@ -41,6 +43,12 @@ class KeyBinder {
 
             // Window/frame swap
             CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.swapNext() }, description: "swap with next frame"),
+            CGKeyCode(kVK_ANSI_K): Binding(key: CGKeyCode(kVK_ANSI_K), action: { $0.killWindow() }, description: "kill window"),
+
+            // Screen navigation
+            CGKeyCode(kVK_ANSI_Period): Binding(key: CGKeyCode(kVK_ANSI_Period), action: { $0.focusNextScreen() }, description: "next screen"),
+            CGKeyCode(kVK_ANSI_Comma):  Binding(key: CGKeyCode(kVK_ANSI_Comma),  action: { $0.focusPrevScreen() }, description: "prev screen"),
+            CGKeyCode(kVK_ANSI_M):      Binding(key: CGKeyCode(kVK_ANSI_M),      action: { $0.moveWindowToNextScreen() }, description: "move window to next screen"),
 
             // Undo/Redo
             CGKeyCode(kVK_ANSI_U): Binding(key: CGKeyCode(kVK_ANSI_U), action: { $0.undo() }, description: "undo"),
@@ -53,6 +61,19 @@ class KeyBinder {
 
     init(wm: WindowManager) {
         self.wm = wm
+    }
+
+    func setPrefixKey(_ keyCode: CGKeyCode) {
+        prefixKeyCode = keyCode
+    }
+
+    func addBinding(keyCode: CGKeyCode, keyName: String, command: String, server: CommandServer) {
+        let b = Binding(key: keyCode, action: { _ in server.handleCommand(command) }, description: command)
+        bindings[keyCode] = b
+    }
+
+    func removeBinding(keyCode: CGKeyCode) {
+        bindings.removeValue(forKey: keyCode)
     }
 
     func start() -> Bool {
@@ -108,6 +129,11 @@ class KeyBinder {
             return Unmanaged.passUnretained(event)
         }
 
+        // When the command prompt is active, let all keys through to it
+        if promptActive {
+            return Unmanaged.passUnretained(event)
+        }
+
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
 
@@ -138,6 +164,13 @@ class KeyBinder {
                 return nil
             }
 
+            // : (Shift-;) → command prompt
+            if keyCode == CGKeyCode(kVK_ANSI_Semicolon) && flags.contains(.maskShift) {
+                print(">> command prompt")
+                showCommandPrompt()
+                return nil
+            }
+
             // Look up binding by keyCode only — works whether ctrl is held or not
             if let binding = bindings[keyCode] {
                 print(">> \(binding.description)")
@@ -161,6 +194,18 @@ class KeyBinder {
         return Unmanaged.passUnretained(event)
     }
 
+    private func showCommandPrompt() {
+        promptActive = true
+        wm.commandPrompt.show { [weak self] cmd in
+            guard let self = self else { return }
+            self.promptActive = false
+            if !cmd.isEmpty {
+                print(">> :\(cmd)")
+                self.commandServer?.handleCommand(cmd)
+            }
+        }
+    }
+
     func printBindings() {
         print("Bindings (after Ctrl-t):")
         let sorted = bindings.values.sorted { $0.description < $1.description }
@@ -168,7 +213,8 @@ class KeyBinder {
             let keyName = keyCodeName(b.key)
             print("  \(keyName) / Ctrl-\(keyName) → \(b.description)")
         }
-        print("  Ctrl-t → last (switch to previous frame)")
+        print("  Ctrl-t → last (switch to previous window)")
+        print("  : → command prompt")
         print("  t → send t to app")
         print("")
     }
@@ -183,6 +229,10 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_O): "o",
             CGKeyCode(kVK_ANSI_W): "w",
             CGKeyCode(kVK_ANSI_I): "i",
+            CGKeyCode(kVK_ANSI_K): "k",
+            CGKeyCode(kVK_ANSI_M): "m",
+            CGKeyCode(kVK_ANSI_Period): ".",
+            CGKeyCode(kVK_ANSI_Comma): ",",
             CGKeyCode(kVK_ANSI_U): "u",
             CGKeyCode(kVK_ANSI_R): "r",
             CGKeyCode(kVK_ANSI_T): "t",

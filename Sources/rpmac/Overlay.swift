@@ -23,6 +23,14 @@ class Overlay {
     /// How long the overlay stays visible (seconds)
     var displayDuration: TimeInterval = 0.7
 
+    /// Border appearance (applied to BorderView)
+    var borderWidth: CGFloat = 2 {
+        didSet { (borderWindow?.contentView as? BorderView)?.borderWidth = borderWidth }
+    }
+    var borderColor: NSColor = .systemBlue {
+        didSet { (borderWindow?.contentView as? BorderView)?.borderColor = borderColor }
+    }
+
     /// Show the focus border around the given rect (persistent until moved)
     func showBorder(around rect: CGRect) {
         let flipped = flipToCocoaCoordinates(rect)

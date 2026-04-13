@@ -34,6 +34,7 @@ if !keyBinder.start() {
 
 // Also start socket server for scripting
 let server = CommandServer(wm: wm)
+keyBinder.commandServer = server
 
 // Handle clean shutdown
 signal(SIGINT) { _ in
@@ -48,6 +49,16 @@ signal(SIGTERM) { _ in
 }
 
 server.start()
+
+// Load config from ~/.rpmacrc
+let config = Config()
+let parsed = config.parse()
+if !parsed.bindings.isEmpty || !parsed.unbindings.isEmpty || parsed.escapeKey != nil
+    || !parsed.settings.isEmpty || !parsed.startupCommands.isEmpty {
+    print("Loading ~/.rpmacrc:")
+    config.apply(parsed: parsed, keyBinder: keyBinder, wm: wm, server: server)
+    print("")
+}
 
 print("Socket commands also available at /tmp/rpmac.sock")
 print("")

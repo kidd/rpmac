@@ -59,15 +59,28 @@ enum AccessibilityHelper {
 
     /// Get the usable screen rect (minus menu bar and dock) in Accessibility API coordinates (top-left origin)
     static func screenRect() -> CGRect {
-        guard let screen = NSScreen.main else {
+        return screenRect(for: NSScreen.main)
+    }
+
+    /// Get usable rect for a specific NSScreen, in Accessibility API coordinates (top-left origin)
+    static func screenRect(for screen: NSScreen?) -> CGRect {
+        guard let screen = screen else {
             return CGRect(x: 0, y: 0, width: 1920, height: 1080)
         }
         // NSScreen uses bottom-left origin (Cocoa), Accessibility API uses top-left origin.
-        // screen.frame.maxY is the total screen height (including menu bar).
-        // visibleFrame excludes menu bar at top and dock.
+        // For multi-monitor, the primary screen's origin is (0,0) at bottom-left.
+        // In AX coordinates, primary screen origin is (0,0) at top-left.
+        // We need to convert using the primary screen's height as the reference.
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
         let visible = screen.visibleFrame
-        let fullHeight = screen.frame.height
-        let yFlipped = fullHeight - visible.origin.y - visible.height
+        let yFlipped = primaryHeight - visible.origin.y - visible.height
         return CGRect(x: visible.origin.x, y: yFlipped, width: visible.width, height: visible.height)
+    }
+
+    /// All screens as AX-coordinate rects, ordered by position (left to right)
+    static func allScreenRects() -> [(screen: NSScreen, rect: CGRect)] {
+        return NSScreen.screens
+            .map { ($0, screenRect(for: $0)) }
+            .sorted { $0.rect.origin.x < $1.rect.origin.x }
     }
 }

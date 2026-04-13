@@ -1,21 +1,50 @@
 import Foundation
 import CoreGraphics
+import AppKit
+
+/// Per-screen state: each screen has its own frame tree
+class ScreenState {
+    let screenIndex: Int
+    var rect: CGRect
+    var root: Frame
+    var focused: Frame
+
+    init(screenIndex: Int, rect: CGRect) {
+        self.screenIndex = screenIndex
+        self.rect = rect
+        self.root = Frame(rect: rect)
+        self.focused = root
+    }
+}
 
 /// The core window manager state — manages frames and window assignments
 class WindowManager {
-    var root: Frame
-    var focused: Frame
+    var screens: [ScreenState] = []
+    var currentScreenIndex: Int = 0
     private var lastWindow: WindowRef?
     let overlay = Overlay()
+    let commandPrompt = CommandPrompt()
 
     /// Windows not currently assigned to any frame
     var unmanaged: [WindowRef] = []
 
+    /// Current screen state
+    var current: ScreenState { screens[currentScreenIndex] }
+
+    /// Convenience: root frame of current screen
+    var root: Frame { current.root }
+
+    /// Convenience: focused frame of current screen
+    var focused: Frame {
+        get { current.focused }
+        set { current.focused = newValue }
+    }
+
     // MARK: - Undo/Redo
 
     private struct Snapshot {
-        let root: Frame
-        let focusedLeafIndex: Int
+        let screenStates: [(root: Frame, focusedLeafIndex: Int)]
+        let currentScreenIndex: Int
         let unmanaged: [WindowRef]
     }
 
@@ -23,25 +52,35 @@ class WindowManager {
     private var redoStack: [Snapshot] = []
     private let maxUndoLevels = 50
 
-    /// Save current state before a structural change
     private func saveSnapshot() {
-        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
-        let snap = Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged)
-        undoStack.append(snap)
-        if undoStack.count > maxUndoLevels {
-            undoStack.removeFirst()
+        let states = screens.map { s in
+            let (clonedRoot, focusIdx) = Frame.deepCopy(root: s.root, focused: s.focused)
+            return (root: clonedRoot, focusedLeafIndex: focusIdx)
         }
+        let snap = Snapshot(screenStates: states, currentScreenIndex: currentScreenIndex, unmanaged: unmanaged)
+        undoStack.append(snap)
+        if undoStack.count > maxUndoLevels { undoStack.removeFirst() }
         redoStack.removeAll()
     }
 
-    /// Restore a snapshot
+    private func captureCurrentSnapshot() -> Snapshot {
+        let states = screens.map { s in
+            let (clonedRoot, focusIdx) = Frame.deepCopy(root: s.root, focused: s.focused)
+            return (root: clonedRoot, focusedLeafIndex: focusIdx)
+        }
+        return Snapshot(screenStates: states, currentScreenIndex: currentScreenIndex, unmanaged: unmanaged)
+    }
+
     private func restore(_ snap: Snapshot) {
-        root = snap.root
+        for (i, state) in snap.screenStates.enumerated() where i < screens.count {
+            screens[i].root = state.root
+            let leaves = state.root.leaves
+            let idx = min(state.focusedLeafIndex, leaves.count - 1)
+            screens[i].focused = leaves[max(idx, 0)]
+        }
+        currentScreenIndex = min(snap.currentScreenIndex, screens.count - 1)
         unmanaged = snap.unmanaged
-        let leaves = root.leaves
-        let idx = min(snap.focusedLeafIndex, leaves.count - 1)
-        focused = leaves[max(idx, 0)]
-        applyLayout()
+        applyAllLayouts()
     }
 
     func undo() {
@@ -49,9 +88,7 @@ class WindowManager {
             print("Nothing to undo")
             return
         }
-        // Save current state to redo stack
-        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
-        redoStack.append(Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged))
+        redoStack.append(captureCurrentSnapshot())
         restore(snap)
         print("Undo")
     }
@@ -61,28 +98,33 @@ class WindowManager {
             print("Nothing to redo")
             return
         }
-        // Save current state to undo stack
-        let (clonedRoot, focusIdx) = Frame.deepCopy(root: root, focused: focused)
-        undoStack.append(Snapshot(root: clonedRoot, focusedLeafIndex: focusIdx, unmanaged: unmanaged))
+        undoStack.append(captureCurrentSnapshot())
         restore(snap)
         print("Redo")
     }
 
+    // MARK: - Init
+
     init() {
-        let screen = AccessibilityHelper.screenRect()
-        let rect = CGRect(
-            x: screen.origin.x,
-            y: screen.origin.y,
-            width: screen.width,
-            height: screen.height
-        )
-        root = Frame(rect: rect)
-        focused = root
+        let allScreens = AccessibilityHelper.allScreenRects()
+        if allScreens.isEmpty {
+            let rect = AccessibilityHelper.screenRect()
+            screens = [ScreenState(screenIndex: 0, rect: rect)]
+        } else {
+            screens = allScreens.enumerated().map { (i, sr) in
+                ScreenState(screenIndex: i, rect: sr.rect)
+            }
+        }
+        currentScreenIndex = 0
+        print("Screens: \(screens.count)")
+        for (i, s) in screens.enumerated() {
+            print("  [\(i)] \(Int(s.rect.width))x\(Int(s.rect.height))+\(Int(s.rect.origin.x))+\(Int(s.rect.origin.y))")
+        }
     }
 
-    /// Change focus, tracking the previous window for `focusLast`
+    // MARK: - Focus helpers
+
     private func setFocus(_ frame: Frame) {
-        // Track the window we're leaving, not the frame
         if let currentWin = focused.window, focused !== frame || frame.window != currentWin {
             lastWindow = currentWin
         }
@@ -90,33 +132,84 @@ class WindowManager {
         showFocusOverlay()
     }
 
-    /// Flash an overlay showing what's in the focused frame, and update the border
     private func showFocusOverlay() {
         let leaves = root.leaves
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
         let winTitle = focused.window?.title ?? "(empty)"
-        let msg = "[\(idx)] \(winTitle)"
+        let screenLabel = screens.count > 1 ? "S\(currentScreenIndex):" : ""
+        let msg = "\(screenLabel)[\(idx)] \(winTitle)"
         overlay.show(message: msg, in: focused.rect)
         overlay.showBorder(around: focused.rect)
     }
 
-    /// Switch to the last window (ratpoison's "last").
-    /// If the window is in another frame, focus that frame.
-    /// If the window is in the unmanaged pool, swap it into the current frame.
+    /// All leaf frames across all screens
+    private var allLeaves: [Frame] {
+        screens.flatMap { $0.root.leaves }
+    }
+
+    // MARK: - Screen navigation
+
+    /// Focus the next screen
+    func focusNextScreen() {
+        guard screens.count > 1 else { return }
+        currentScreenIndex = (currentScreenIndex + 1) % screens.count
+        setFocus(focused)
+        focused.window?.raise()
+    }
+
+    /// Focus the previous screen
+    func focusPrevScreen() {
+        guard screens.count > 1 else { return }
+        currentScreenIndex = (currentScreenIndex - 1 + screens.count) % screens.count
+        setFocus(focused)
+        focused.window?.raise()
+    }
+
+    /// Move the window in the focused frame to the next screen's focused frame
+    func moveWindowToNextScreen() {
+        guard screens.count > 1 else { return }
+        guard let win = focused.window else { return }
+
+        // Remove from current frame
+        focused.content = .empty
+        if !unmanaged.isEmpty {
+            focused.content = .window(unmanaged.removeFirst())
+        }
+
+        // Switch to next screen
+        let nextIdx = (currentScreenIndex + 1) % screens.count
+        let target = screens[nextIdx]
+
+        // Put current window of target into unmanaged, put our window there
+        if let targetWin = target.focused.window {
+            unmanaged.append(targetWin)
+        }
+        target.focused.content = .window(win)
+
+        currentScreenIndex = nextIdx
+        applyAllLayouts()
+        showFocusOverlay()
+    }
+
+    // MARK: - Last window
+
     func focusLast() {
         guard let lastWin = lastWindow else {
             print("No previous window")
             return
         }
 
-        // Is it in a frame?
-        if let frame = root.leaves.first(where: { $0.window == lastWin }) {
-            setFocus(frame)
-            focused.window?.raise()
-            return
+        // Check all screens for the window
+        for (i, screen) in screens.enumerated() {
+            if let frame = screen.root.leaves.first(where: { $0.window == lastWin }) {
+                currentScreenIndex = i
+                setFocus(frame)
+                focused.window?.raise()
+                return
+            }
         }
 
-        // Is it in the unmanaged pool? Swap it into the current frame.
+        // Check unmanaged pool
         if let idx = unmanaged.firstIndex(where: { $0 == lastWin }) {
             let win = unmanaged.remove(at: idx)
             if let current = focused.window {
@@ -133,66 +226,51 @@ class WindowManager {
 
     // MARK: - Auto-capture
 
-    /// Capture all existing windows. First one goes into the root frame,
-    /// the rest go into the unmanaged pool.
     func captureAllWindows() {
         let windows = AccessibilityHelper.allWindows()
         print("Found \(windows.count) windows")
 
+        // Put the first window on the first screen, rest in unmanaged
         guard let first = windows.first else { return }
-
-        focused.content = .window(first)
+        screens[0].focused.content = .window(first)
 
         for win in windows.dropFirst() {
             unmanaged.append(win)
         }
 
-        applyLayout()
+        applyAllLayouts()
     }
 
     // MARK: - Frame operations
 
-    /// Split the focused frame horizontally (left | right).
-    /// Current window stays in the left frame, next unmanaged window goes right.
     func splitHorizontal() {
         guard focused.isLeaf else { return }
         saveSnapshot()
         let (left, right) = focused.split(direction: .horizontal)
         setFocus(left)
-
-        // Pull next unmanaged window into the new frame
         if !unmanaged.isEmpty {
             right.content = .window(unmanaged.removeFirst())
         }
-
         applyLayout()
     }
 
-    /// Split the focused frame vertically (top / bottom).
-    /// Current window stays in the top frame, next unmanaged window goes bottom.
     func splitVertical() {
         guard focused.isLeaf else { return }
         saveSnapshot()
         let (top, bottom) = focused.split(direction: .vertical)
         setFocus(top)
-
         if !unmanaged.isEmpty {
             bottom.content = .window(unmanaged.removeFirst())
         }
-
         applyLayout()
     }
 
-    /// Remove the focused frame, its sibling takes over.
-    /// The window in the removed frame goes to the unmanaged pool.
     func removeFrame() {
         saveSnapshot()
-        // Save the window before removing
         if let win = focused.window {
             unmanaged.insert(win, at: 0)
             focused.content = .empty
         }
-
         if let newFocus = focused.remove() {
             let target = newFocus.isLeaf ? newFocus : (newFocus.leaves.first ?? newFocus)
             setFocus(target)
@@ -200,29 +278,20 @@ class WindowManager {
         }
     }
 
-    /// Remove all frames except the focused one (like ratpoison's "only")
     func only() {
         saveSnapshot()
-        // Collect all windows from other frames into unmanaged
         for leaf in root.leaves where leaf !== focused {
             if let win = leaf.window {
                 unmanaged.append(win)
             }
         }
-
-        // Reset to a single frame with the focused window's content
         let currentContent = focused.content
-        let screen = AccessibilityHelper.screenRect()
-        root = Frame(rect: CGRect(
-            x: screen.origin.x, y: screen.origin.y,
-            width: screen.width, height: screen.height
-        ))
-        root.content = currentContent
-        setFocus(root)
+        current.root = Frame(rect: current.rect)
+        current.root.content = currentContent
+        setFocus(current.root)
         applyLayout()
     }
 
-    /// Focus the next leaf frame
     func focusNext() {
         let leaves = root.leaves
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
@@ -231,7 +300,6 @@ class WindowManager {
         focused.window?.raise()
     }
 
-    /// Focus the previous leaf frame
     func focusPrev() {
         let leaves = root.leaves
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
@@ -240,82 +308,65 @@ class WindowManager {
         focused.window?.raise()
     }
 
-    /// Swap the window in the focused frame with the next frame's window
     func swapNext() {
         let leaves = root.leaves
         guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
         let next = (idx + 1) % leaves.count
-
         let tmp = leaves[idx].content
         leaves[idx].content = leaves[next].content
         leaves[next].content = tmp
-
         applyLayout()
     }
 
     // MARK: - Window management
 
-    /// Cycle through windows in the focused frame (swap current with next unmanaged)
     func nextWindowInFrame() {
         guard !unmanaged.isEmpty else {
             print("No other windows")
             return
         }
-
         if let current = focused.window {
             lastWindow = current
             unmanaged.append(current)
         }
-
         let win = unmanaged.removeFirst()
         focused.content = .window(win)
         applyLayout()
     }
 
-    /// Cycle to the previous window in the unmanaged pool (reverse of nextWindowInFrame)
     func prevWindowInFrame() {
         guard !unmanaged.isEmpty else {
             print("No other windows")
             return
         }
-
         if let current = focused.window {
             lastWindow = current
             unmanaged.insert(current, at: 0)
         }
-
         let win = unmanaged.removeLast()
         focused.content = .window(win)
         applyLayout()
     }
 
-    /// Pull the focused (frontmost) macOS window into the current frame
     func captureWindow() {
         guard let win = AccessibilityHelper.focusedWindow() else {
             print("No focused window to capture")
             return
         }
-
-        // Remove from any existing frame
-        for leaf in root.leaves {
-            if leaf.window == win {
-                leaf.content = .empty
+        // Remove from any frame on any screen
+        for screen in screens {
+            for leaf in screen.root.leaves {
+                if leaf.window == win { leaf.content = .empty }
             }
         }
-
-        // Remove from unmanaged
         unmanaged.removeAll { $0 == win }
-
-        // Put current frame's window back into unmanaged
         if let current = focused.window {
             unmanaged.insert(current, at: 0)
         }
-
         focused.content = .window(win)
         applyLayout()
     }
 
-    /// Release the window in the focused frame (stop managing it)
     func releaseWindow() {
         if let win = focused.window {
             unmanaged.append(win)
@@ -323,9 +374,23 @@ class WindowManager {
         focused.content = .empty
     }
 
+    func killWindow() {
+        guard let win = focused.window else {
+            print("No window in focused frame")
+            return
+        }
+        let app = NSRunningApplication(processIdentifier: win.pid)
+        focused.content = .empty
+        if !unmanaged.isEmpty {
+            focused.content = .window(unmanaged.removeFirst())
+        }
+        app?.terminate()
+        applyLayout()
+    }
+
     // MARK: - Layout
 
-    /// Apply the current frame tree layout to all managed windows
+    /// Apply layout for current screen only
     func applyLayout() {
         for leaf in root.leaves {
             if let win = leaf.window {
@@ -338,28 +403,41 @@ class WindowManager {
         overlay.showBorder(around: focused.rect)
     }
 
-    /// Recalculate everything (e.g. after screen size change)
+    /// Apply layout for all screens
+    func applyAllLayouts() {
+        for screen in screens {
+            for leaf in screen.root.leaves {
+                if let win = leaf.window {
+                    win.moveResize(to: leaf.rect)
+                }
+            }
+        }
+        focused.window?.raise()
+        overlay.showBorder(around: focused.rect)
+    }
+
     func rescreen() {
-        let screen = AccessibilityHelper.screenRect()
-        root.rect = CGRect(
-            x: screen.origin.x,
-            y: screen.origin.y,
-            width: screen.width,
-            height: screen.height
-        )
-        root.recalculateRects()
-        applyLayout()
+        let allScreens = AccessibilityHelper.allScreenRects()
+        for (i, sr) in allScreens.enumerated() where i < screens.count {
+            screens[i].rect = sr.rect
+            screens[i].root.rect = sr.rect
+            screens[i].root.recalculateRects()
+        }
+        applyAllLayouts()
     }
 
     // MARK: - Info
 
     func printStatus() {
-        let leaves = root.leaves
-        print("Frames: \(leaves.count)")
-        for (i, leaf) in leaves.enumerated() {
-            let marker = (leaf === focused) ? " *" : ""
-            let winTitle = leaf.window?.title ?? "(empty)"
-            print("  [\(i)\(marker)] \(Int(leaf.rect.width))x\(Int(leaf.rect.height))+\(Int(leaf.rect.origin.x))+\(Int(leaf.rect.origin.y)) — \(winTitle)")
+        for (si, screen) in screens.enumerated() {
+            let marker = si == currentScreenIndex ? " *" : ""
+            print("Screen \(si)\(marker): \(Int(screen.rect.width))x\(Int(screen.rect.height))")
+            let leaves = screen.root.leaves
+            for (i, leaf) in leaves.enumerated() {
+                let fmarker = (leaf === screen.focused) ? " *" : ""
+                let winTitle = leaf.window?.title ?? "(empty)"
+                print("  [\(i)\(fmarker)] \(Int(leaf.rect.width))x\(Int(leaf.rect.height))+\(Int(leaf.rect.origin.x))+\(Int(leaf.rect.origin.y)) — \(winTitle)")
+            }
         }
         print("Unmanaged: \(unmanaged.count)")
     }
