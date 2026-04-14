@@ -680,27 +680,6 @@ class WindowManager {
         }
     }
 
-    /// Focus a window in place — switch to its frame/screen without moving it.
-    func focusWindowInPlace(number n: Int) {
-        guard let win = windowNumbers[n] else {
-            print("No window with number \(n)")
-            return
-        }
-
-        // Find the frame and screen containing this window
-        for (i, screen) in screens.enumerated() {
-            if let frame = screen.root.leaves.first(where: { $0.window == win }) {
-                currentScreenIndex = i
-                setFocus(frame)
-                win.raise(warp: warp)
-                return
-            }
-        }
-
-        // Unmanaged — just raise it
-        win.raise(warp: warp)
-    }
-
     func windowList() -> String {
         var lines: [String] = []
         let sorted = windowNumbers.sorted(by: { $0.key < $1.key })
