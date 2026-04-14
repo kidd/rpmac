@@ -57,11 +57,16 @@ All bindings work as both `Ctrl-t <key>` and `Ctrl-t Ctrl-<key>` (holding ctrl t
 | `p` | Previous window |
 | `o` / `Tab` | Next frame |
 | `Shift-Tab` | Previous frame |
+| `Shift-R` | Remove current frame |
+| `Arrow` | Focus frame in that direction |
+| `Ctrl-Arrow` | Exchange window with frame in that direction |
+| `0`-`9` | Select window by number (swap into current frame) |
+| `f` | fselect — show frame labels, press one to focus that frame |
 | `.` | Next screen |
 | `,` | Previous screen |
 | `m` | Move window to next screen |
 | `q` | Only (remove all other frames, keep focused) |
-| `w` | Swap window with next frame |
+| `w` | Show window list |
 | `k` | Kill window (terminates the app) |
 | `b` | Banish mouse to bottom-right corner |
 | `u` | Undo (frame structure changes) |
@@ -69,6 +74,7 @@ All bindings work as both `Ctrl-t <key>` and `Ctrl-t Ctrl-<key>` (holding ctrl t
 | `i` | Print status to stdout |
 | `Ctrl-t` | Last (toggle to previous window) |
 | `:` | Command prompt (with tab-autocomplete) |
+| `!` | Exec prompt (run a shell command) |
 | `t` | Pass-through (send a literal `t` to the app) |
 
 ## Commands
@@ -83,6 +89,10 @@ Available via the command prompt (`:`) or the Unix socket:
 | `prev` | Previous window in current frame |
 | `next-frame` | Focus next frame |
 | `prev-frame` | Focus previous frame |
+| `focusleft/right/up/down` | Focus frame in direction |
+| `exchangeleft/right/up/down` | Exchange window with frame in direction |
+| `select <n>` | Select window by number |
+| `fselect` | Interactive frame selection with overlay labels |
 | `next-screen` | Focus next screen |
 | `prev-screen` | Focus previous screen |
 | `move-to-screen` | Move current window to next screen |
@@ -93,6 +103,8 @@ Available via the command prompt (`:`) or the Unix socket:
 | `kill` | Kill the window's application |
 | `capture` / `pull` | Capture the currently focused (OS-level) window |
 | `release` | Release window from frame to unmanaged pool |
+| `windows` | List all windows with their numbers |
+| `exec <cmd>` | Run a shell command |
 | `banish` | Move mouse to bottom-right corner |
 | `undo` | Undo last frame operation |
 | `redo` | Redo |
@@ -128,8 +140,14 @@ set overlay-duration 0.5
 # Warp mouse to focused window on raise
 set warp 1
 
+# Frame selection characters (default: 0123456789)
+set framesels asdfghjkl
+
 # Apps that need a synthetic click to receive focus (default: alacritty)
 set click-to-focus kitty
+
+# Per-app key remapping
+appremap "Alacritty" C-n down
 
 # Custom bindings
 bind f next-frame
@@ -150,6 +168,7 @@ split-h
 | `unbind <key>` | Remove a binding |
 | `escape <key>` | Change prefix key (e.g. `C-s`) |
 | `set <option> <value>` | Change a setting |
+| `appremap "<app>" <from> <to>` | Remap a key in a specific app (e.g. `C-n` to `down`) |
 | `<command>` | Run command at startup |
 
 ### Key names
@@ -171,7 +190,9 @@ split-h
 | `border-color` | system blue | Focus border color |
 | `overlay-duration` | `0.7` | How long the message overlay shows (seconds) |
 | `warp` | `0` | Warp mouse to focused window on raise |
+| `clicktofocus` | `0` | Enable click-to-focus on frames |
 | `click-to-focus` | `alacritty` | App name that needs a synthetic click to focus (repeatable) |
+| `framesels` | `0123456789` | Characters used to label frames in fselect |
 
 ## Architecture
 
