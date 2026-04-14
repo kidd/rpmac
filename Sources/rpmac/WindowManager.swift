@@ -202,10 +202,14 @@ class WindowManager {
             return
         }
 
+        // Save current window so we can toggle back
+        let previousWindow = focused.window
+
         // Check all screens for the window
         for (i, screen) in screens.enumerated() {
             if let frame = screen.root.leaves.first(where: { $0.window == lastWin }) {
                 currentScreenIndex = i
+                lastWindow = previousWindow
                 setFocus(frame)
                 focused.window?.raise(warp: warp)
                 return
@@ -218,6 +222,7 @@ class WindowManager {
             if let current = focused.window {
                 unmanaged.insert(current, at: 0)
             }
+            lastWindow = previousWindow
             focused.content = .window(win)
             applyLayout()
             return
@@ -241,32 +246,66 @@ class WindowManager {
         }
         for w in unmanaged { knownElements.append(w.element) }
 
-        let w = WindowCreationWatcher { [weak self] element, pid in
-            guard let self = self else { return }
+        let w = WindowCreationWatcher(
+            onCreate: { [weak self] element, pid in
+                guard let self = self else { return }
 
-            // Skip pre-existing windows
-            if knownElements.contains(where: { CFEqual($0, element) }) { return }
+                // Skip pre-existing windows
+                if knownElements.contains(where: { CFEqual($0, element) }) { return }
 
-            let wref = WindowRef(pid: pid, element: element)
-            guard wref.isNormalWindow else { return }
+                let wref = WindowRef(pid: pid, element: element)
+                guard wref.isNormalWindow else { return }
 
-            // Skip if we already manage this window
-            for screen in self.screens {
-                for leaf in screen.root.leaves {
-                    if leaf.window == wref { return }
+                // Skip if we already manage this window
+                for screen in self.screens {
+                    for leaf in screen.root.leaves {
+                        if leaf.window == wref { return }
+                    }
+                }
+                if self.unmanaged.contains(where: { $0 == wref }) { return }
+
+                print("New window: \(wref.title ?? "(untitled)")")
+
+                // Place into focused frame, pushing current window to unmanaged
+                if let current = self.focused.window {
+                    self.unmanaged.insert(current, at: 0)
+                }
+                self.focused.content = .window(wref)
+                self.applyLayout()
+            },
+            onDestroy: { [weak self] element, pid in
+                guard let self = self else { return }
+                let wref = WindowRef(pid: pid, element: element)
+
+                // Remove from frames
+                for screen in self.screens {
+                    for leaf in screen.root.leaves {
+                        if leaf.window == wref {
+                            leaf.content = .empty
+                            // Fill from unmanaged if available
+                            if !self.unmanaged.isEmpty {
+                                leaf.content = .window(self.unmanaged.removeFirst())
+                            }
+                            print("Window destroyed (was in frame): \(wref.title ?? "(untitled)")")
+                            self.applyAllLayouts()
+                            return
+                        }
+                    }
+                }
+
+                // Remove from unmanaged
+                let countBefore = self.unmanaged.count
+                self.unmanaged.removeAll(where: { $0 == wref })
+                if self.unmanaged.count < countBefore {
+                    print("Window destroyed (was unmanaged): \(wref.title ?? "(untitled)")")
+                }
+
+                // Clear lastWindow if it was this window
+                if self.lastWindow == wref {
+                    self.lastWindow = nil
                 }
             }
-            if self.unmanaged.contains(where: { $0 == wref }) { return }
-
-            print("New window: \(wref.title ?? "(untitled)")")
-
-            // Place into focused frame, pushing current window to unmanaged
-            if let current = self.focused.window {
-                self.unmanaged.insert(current, at: 0)
-            }
-            self.focused.content = .window(wref)
-            self.applyLayout()
-        }
+        )
         w.start()
         self.watcher = w
     }

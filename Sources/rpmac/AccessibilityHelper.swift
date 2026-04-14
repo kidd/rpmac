@@ -2,28 +2,35 @@ import Foundation
 import ApplicationServices
 import AppKit
 
-/// Observes AX window-created notifications for a single app and forwards them to a callback.
+/// Observes AX window-created and window-destroyed notifications for a single app.
 class AppWindowObserver {
     let pid: pid_t
     let observer: AXObserver
-    let callback: (AXUIElement) -> Void
+    let createCallback: (AXUIElement) -> Void
+    let destroyCallback: (AXUIElement) -> Void
 
-    init?(pid: pid_t, callback: @escaping (AXUIElement) -> Void) {
+    init?(pid: pid_t, onCreate: @escaping (AXUIElement) -> Void, onDestroy: @escaping (AXUIElement) -> Void) {
         self.pid = pid
-        self.callback = callback
+        self.createCallback = onCreate
+        self.destroyCallback = onDestroy
 
         var obs: AXObserver?
-        let err = AXObserverCreate(pid, { (_: AXObserver, element: AXUIElement, _: CFString, refcon: UnsafeMutableRawPointer?) in
+        let err = AXObserverCreate(pid, { (_: AXObserver, element: AXUIElement, notification: CFString, refcon: UnsafeMutableRawPointer?) in
             guard let refcon = refcon else { return }
             let observer = Unmanaged<AppWindowObserver>.fromOpaque(refcon).takeUnretainedValue()
-            observer.callback(element)
+            if notification as String == kAXUIElementDestroyedNotification as String {
+                observer.destroyCallback(element)
+            } else {
+                observer.createCallback(element)
+            }
         }, &obs)
         guard err == .success, let observer = obs else { return nil }
         self.observer = observer
 
         let appRef = AXUIElementCreateApplication(pid)
-        AXObserverAddNotification(observer, appRef, kAXWindowCreatedNotification as CFString,
-                                  Unmanaged.passUnretained(self).toOpaque())
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        AXObserverAddNotification(observer, appRef, kAXWindowCreatedNotification as CFString, refcon)
+        AXObserverAddNotification(observer, appRef, kAXUIElementDestroyedNotification as CFString, refcon)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
 
@@ -35,11 +42,13 @@ class AppWindowObserver {
 /// Watches for new app launches and installs per-app AX observers.
 class WindowCreationWatcher {
     private var observers: [pid_t: AppWindowObserver] = [:]
-    private var callback: (AXUIElement, pid_t) -> Void
+    private var createCallback: (AXUIElement, pid_t) -> Void
+    private var destroyCallback: (AXUIElement, pid_t) -> Void
     private var workspaceObserver: NSObjectProtocol?
 
-    init(callback: @escaping (AXUIElement, pid_t) -> Void) {
-        self.callback = callback
+    init(onCreate: @escaping (AXUIElement, pid_t) -> Void, onDestroy: @escaping (AXUIElement, pid_t) -> Void) {
+        self.createCallback = onCreate
+        self.destroyCallback = onDestroy
     }
 
     func start() {
@@ -70,8 +79,11 @@ class WindowCreationWatcher {
 
     private func watchApp(pid: pid_t) {
         guard observers[pid] == nil else { return }
-        let cb = self.callback
-        if let obs = AppWindowObserver(pid: pid, callback: { element in cb(element, pid) }) {
+        let createCb = self.createCallback
+        let destroyCb = self.destroyCallback
+        if let obs = AppWindowObserver(pid: pid,
+                                       onCreate: { element in createCb(element, pid) },
+                                       onDestroy: { element in destroyCb(element, pid) }) {
             observers[pid] = obs
         }
     }
