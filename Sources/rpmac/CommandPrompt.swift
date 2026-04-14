@@ -18,6 +18,8 @@ class CommandPrompt: NSObject, NSTextFieldDelegate {
         "split-h", "split-v",
         "next", "prev",
         "next-frame", "prev-frame",
+        "focusleft", "focusright", "focusup", "focusdown",
+        "exchangeleft", "exchangeright", "exchangeup", "exchangedown",
         "next-screen", "prev-screen", "move-to-screen",
         "last",
         "swap", "kill",

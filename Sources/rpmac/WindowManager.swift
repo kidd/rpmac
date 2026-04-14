@@ -227,6 +227,102 @@ class WindowManager {
         showFocusOverlay()
     }
 
+    // MARK: - Directional focus
+
+    enum Direction { case left, right, up, down }
+
+    func focusDirection(_ dir: Direction) {
+        let from = focused.rect
+
+        // Collect all candidate leaves across all screens with their screen index
+        var candidates: [(frame: Frame, screenIndex: Int)] = []
+        for (i, screen) in screens.enumerated() {
+            for leaf in screen.root.leaves where leaf !== focused {
+                let r = leaf.rect
+                let overlaps: Bool
+                let closer: Bool
+                switch dir {
+                case .right:
+                    overlaps = r.minY < from.maxY && r.maxY > from.minY
+                    closer = r.minX >= from.maxX - 1
+                case .left:
+                    overlaps = r.minY < from.maxY && r.maxY > from.minY
+                    closer = r.maxX <= from.minX + 1
+                case .down:
+                    overlaps = r.minX < from.maxX && r.maxX > from.minX
+                    closer = r.minY >= from.maxY - 1
+                case .up:
+                    overlaps = r.minX < from.maxX && r.maxX > from.minX
+                    closer = r.maxY <= from.minY + 1
+                }
+                if overlaps && closer {
+                    candidates.append((frame: leaf, screenIndex: i))
+                }
+            }
+        }
+
+        // Pick the closest candidate
+        let best = candidates.min(by: { a, b in
+            distance(from: from, to: a.frame.rect, dir: dir) < distance(from: from, to: b.frame.rect, dir: dir)
+        })
+
+        if let best = best {
+            currentScreenIndex = best.screenIndex
+            setFocus(best.frame)
+            focused.window?.raise(warp: warp)
+        }
+    }
+
+    private func distance(from: CGRect, to: CGRect, dir: Direction) -> CGFloat {
+        switch dir {
+        case .right: return to.minX - from.maxX
+        case .left:  return from.minX - to.maxX
+        case .down:  return to.minY - from.maxY
+        case .up:    return from.minY - to.maxY
+        }
+    }
+
+    func exchangeDirection(_ dir: Direction) {
+        let from = focused.rect
+
+        var candidates: [(frame: Frame, screenIndex: Int)] = []
+        for (i, screen) in screens.enumerated() {
+            for leaf in screen.root.leaves where leaf !== focused {
+                let r = leaf.rect
+                let overlaps: Bool
+                let closer: Bool
+                switch dir {
+                case .right:
+                    overlaps = r.minY < from.maxY && r.maxY > from.minY
+                    closer = r.minX >= from.maxX - 1
+                case .left:
+                    overlaps = r.minY < from.maxY && r.maxY > from.minY
+                    closer = r.maxX <= from.minX + 1
+                case .down:
+                    overlaps = r.minX < from.maxX && r.maxX > from.minX
+                    closer = r.minY >= from.maxY - 1
+                case .up:
+                    overlaps = r.minX < from.maxX && r.maxX > from.minX
+                    closer = r.maxY <= from.minY + 1
+                }
+                if overlaps && closer {
+                    candidates.append((frame: leaf, screenIndex: i))
+                }
+            }
+        }
+
+        if let best = candidates.min(by: { a, b in
+            distance(from: from, to: a.frame.rect, dir: dir) < distance(from: from, to: b.frame.rect, dir: dir)
+        }) {
+            let tmp = focused.content
+            focused.content = best.frame.content
+            best.frame.content = tmp
+            currentScreenIndex = best.screenIndex
+            setFocus(best.frame)
+            applyAllLayouts()
+        }
+    }
+
     // MARK: - Last window
 
     func focusLast() {

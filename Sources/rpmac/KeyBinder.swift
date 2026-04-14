@@ -57,6 +57,12 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_U): Binding(key: CGKeyCode(kVK_ANSI_U), action: { $0.undo() }, description: "undo"),
             CGKeyCode(kVK_ANSI_R): Binding(key: CGKeyCode(kVK_ANSI_R), action: { $0.redo() }, description: "redo"),
 
+            // Directional focus
+            CGKeyCode(kVK_LeftArrow):  Binding(key: CGKeyCode(kVK_LeftArrow),  action: { $0.focusDirection(.left) },  description: "focus left"),
+            CGKeyCode(kVK_RightArrow): Binding(key: CGKeyCode(kVK_RightArrow), action: { $0.focusDirection(.right) }, description: "focus right"),
+            CGKeyCode(kVK_UpArrow):    Binding(key: CGKeyCode(kVK_UpArrow),    action: { $0.focusDirection(.up) },    description: "focus up"),
+            CGKeyCode(kVK_DownArrow):  Binding(key: CGKeyCode(kVK_DownArrow),  action: { $0.focusDirection(.down) },  description: "focus down"),
+
             // Info
             CGKeyCode(kVK_ANSI_I): Binding(key: CGKeyCode(kVK_ANSI_I), action: { $0.printStatus() }, description: "show status"),
 
@@ -204,6 +210,33 @@ class KeyBinder {
                 return nil
             }
 
+            // Ctrl-Arrow → exchange window in that direction
+            if ctrlHeld {
+                switch keyCode {
+                case CGKeyCode(kVK_LeftArrow):
+                    print(">> exchange left")
+                    wm.exchangeDirection(.left)
+                    wm.printStatus()
+                    return nil
+                case CGKeyCode(kVK_RightArrow):
+                    print(">> exchange right")
+                    wm.exchangeDirection(.right)
+                    wm.printStatus()
+                    return nil
+                case CGKeyCode(kVK_UpArrow):
+                    print(">> exchange up")
+                    wm.exchangeDirection(.up)
+                    wm.printStatus()
+                    return nil
+                case CGKeyCode(kVK_DownArrow):
+                    print(">> exchange down")
+                    wm.exchangeDirection(.down)
+                    wm.printStatus()
+                    return nil
+                default: break
+                }
+            }
+
             // : (Shift-;) → command prompt
             if keyCode == CGKeyCode(kVK_ANSI_Semicolon) && flags.contains(.maskShift) {
                 print(">> command prompt")
@@ -291,6 +324,10 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_7): "7",
             CGKeyCode(kVK_ANSI_8): "8",
             CGKeyCode(kVK_ANSI_9): "9",
+            CGKeyCode(kVK_LeftArrow): "Left",
+            CGKeyCode(kVK_RightArrow): "Right",
+            CGKeyCode(kVK_UpArrow): "Up",
+            CGKeyCode(kVK_DownArrow): "Down",
         ]
         return names[code] ?? "key(\(code))"
     }

@@ -113,6 +113,30 @@ class CommandServer {
         case "next-unmanaged":
             wm.nextWindowInFrame()
             wm.printStatus()
+        case "focusleft":
+            wm.focusDirection(.left)
+            wm.printStatus()
+        case "focusright":
+            wm.focusDirection(.right)
+            wm.printStatus()
+        case "focusup":
+            wm.focusDirection(.up)
+            wm.printStatus()
+        case "focusdown":
+            wm.focusDirection(.down)
+            wm.printStatus()
+        case "exchangeleft":
+            wm.exchangeDirection(.left)
+            wm.printStatus()
+        case "exchangeright":
+            wm.exchangeDirection(.right)
+            wm.printStatus()
+        case "exchangeup":
+            wm.exchangeDirection(.up)
+            wm.printStatus()
+        case "exchangedown":
+            wm.exchangeDirection(.down)
+            wm.printStatus()
         case "next-screen":
             wm.focusNextScreen()
             wm.printStatus()
