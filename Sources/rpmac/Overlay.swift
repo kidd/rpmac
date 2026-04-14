@@ -157,6 +157,54 @@ class Overlay {
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
+    // MARK: - Cursor indicator (command-wait mode)
+
+    private var cursorWindow: NSWindow?
+    private let cursorSize: CGFloat = 20
+
+    func showCursorIndicator() {
+        let mousePos = NSEvent.mouseLocation // Cocoa coordinates already
+        let rect = NSRect(
+            x: mousePos.x - cursorSize / 2,
+            y: mousePos.y - cursorSize / 2,
+            width: cursorSize,
+            height: cursorSize
+        )
+
+        if cursorWindow == nil {
+            let w = NSWindow(
+                contentRect: rect,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.level = .screenSaver
+            w.ignoresMouseEvents = true
+            w.hasShadow = false
+            w.collectionBehavior = [.canJoinAllSpaces, .stationary]
+
+            let view = BorderView(frame: NSRect(x: 0, y: 0, width: cursorSize, height: cursorSize))
+            view.borderColor = borderColor
+            view.borderWidth = borderWidth
+            w.contentView = view
+            cursorWindow = w
+        }
+
+        cursorWindow?.setFrame(rect, display: true)
+        if let view = cursorWindow?.contentView as? BorderView {
+            view.borderColor = borderColor
+            view.borderWidth = borderWidth
+            view.needsDisplay = true
+        }
+        cursorWindow?.orderFrontRegardless()
+    }
+
+    func hideCursorIndicator() {
+        cursorWindow?.orderOut(nil)
+    }
+
     /// Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin).
     /// In multi-monitor setups, the AX coordinate system uses the primary screen's top-left as (0,0).
     /// Cocoa uses the primary screen's bottom-left as (0,0). Both share the same X axis.

@@ -41,8 +41,8 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_Q): Binding(key: CGKeyCode(kVK_ANSI_Q), action: { $0.only() }, description: "only (remove all other frames)"),
             CGKeyCode(kVK_ANSI_O): Binding(key: CGKeyCode(kVK_ANSI_O), action: { $0.focusNext() }, description: "next frame"),
 
-            // Window/frame swap
-            CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.swapNext() }, description: "swap with next frame"),
+            // Window list / swap
+            CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.showWindowList() }, description: "window list"),
             CGKeyCode(kVK_ANSI_K): Binding(key: CGKeyCode(kVK_ANSI_K), action: { $0.killWindow() }, description: "kill window"),
 
             // Screen navigation
@@ -59,6 +59,18 @@ class KeyBinder {
 
             // Info
             CGKeyCode(kVK_ANSI_I): Binding(key: CGKeyCode(kVK_ANSI_I), action: { $0.printStatus() }, description: "show status"),
+
+            // Window numbering (select by number)
+            CGKeyCode(kVK_ANSI_0): Binding(key: CGKeyCode(kVK_ANSI_0), action: { $0.selectWindow(number: 0) }, description: "select window 0"),
+            CGKeyCode(kVK_ANSI_1): Binding(key: CGKeyCode(kVK_ANSI_1), action: { $0.selectWindow(number: 1) }, description: "select window 1"),
+            CGKeyCode(kVK_ANSI_2): Binding(key: CGKeyCode(kVK_ANSI_2), action: { $0.selectWindow(number: 2) }, description: "select window 2"),
+            CGKeyCode(kVK_ANSI_3): Binding(key: CGKeyCode(kVK_ANSI_3), action: { $0.selectWindow(number: 3) }, description: "select window 3"),
+            CGKeyCode(kVK_ANSI_4): Binding(key: CGKeyCode(kVK_ANSI_4), action: { $0.selectWindow(number: 4) }, description: "select window 4"),
+            CGKeyCode(kVK_ANSI_5): Binding(key: CGKeyCode(kVK_ANSI_5), action: { $0.selectWindow(number: 5) }, description: "select window 5"),
+            CGKeyCode(kVK_ANSI_6): Binding(key: CGKeyCode(kVK_ANSI_6), action: { $0.selectWindow(number: 6) }, description: "select window 6"),
+            CGKeyCode(kVK_ANSI_7): Binding(key: CGKeyCode(kVK_ANSI_7), action: { $0.selectWindow(number: 7) }, description: "select window 7"),
+            CGKeyCode(kVK_ANSI_8): Binding(key: CGKeyCode(kVK_ANSI_8), action: { $0.selectWindow(number: 8) }, description: "select window 8"),
+            CGKeyCode(kVK_ANSI_9): Binding(key: CGKeyCode(kVK_ANSI_9), action: { $0.selectWindow(number: 9) }, description: "select window 9"),
         ]
     }()
 
@@ -84,6 +96,7 @@ class KeyBinder {
 
         let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << CGEventType.leftMouseDown.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -128,6 +141,21 @@ class KeyBinder {
             return Unmanaged.passUnretained(event)
         }
 
+        // Mouse click — update focus to the frame under the cursor
+        if type == .leftMouseDown && wm.clickToFocus {
+            let point = event.location
+            for (i, screen) in wm.screens.enumerated() {
+                for leaf in screen.root.leaves {
+                    if leaf.rect.contains(point) && leaf !== wm.focused {
+                        wm.currentScreenIndex = i
+                        wm.focused = leaf
+                        wm.overlay.showBorder(around: leaf.rect)
+                    }
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
         guard type == .keyDown else {
             return Unmanaged.passUnretained(event)
         }
@@ -144,6 +172,7 @@ class KeyBinder {
 
         if waitingForCommand {
             waitingForCommand = false
+            wm.overlay.hideCursorIndicator()
 
             // Ctrl-t Ctrl-t: "last" — switch to previously focused frame
             // Ctrl-t t: pass a real t through to the app
@@ -163,6 +192,14 @@ class KeyBinder {
             if keyCode == CGKeyCode(kVK_Tab) && flags.contains(.maskShift) {
                 print(">> prev frame")
                 wm.focusPrev()
+                wm.printStatus()
+                return nil
+            }
+
+            // Shift-R → remove frame
+            if keyCode == CGKeyCode(kVK_ANSI_R) && flags.contains(.maskShift) {
+                print(">> remove frame")
+                wm.removeFrame()
                 wm.printStatus()
                 return nil
             }
@@ -190,6 +227,7 @@ class KeyBinder {
         // Check for prefix key: Ctrl-t
         if keyCode == prefixKeyCode && ctrlHeld {
             waitingForCommand = true
+            wm.overlay.showCursorIndicator()
             return nil // swallow the prefix
         }
 
@@ -243,6 +281,16 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_T): "t",
             CGKeyCode(kVK_Tab):    "Tab",
             CGKeyCode(kVK_Space):  "Space",
+            CGKeyCode(kVK_ANSI_0): "0",
+            CGKeyCode(kVK_ANSI_1): "1",
+            CGKeyCode(kVK_ANSI_2): "2",
+            CGKeyCode(kVK_ANSI_3): "3",
+            CGKeyCode(kVK_ANSI_4): "4",
+            CGKeyCode(kVK_ANSI_5): "5",
+            CGKeyCode(kVK_ANSI_6): "6",
+            CGKeyCode(kVK_ANSI_7): "7",
+            CGKeyCode(kVK_ANSI_8): "8",
+            CGKeyCode(kVK_ANSI_9): "9",
         ]
         return names[code] ?? "key(\(code))"
     }

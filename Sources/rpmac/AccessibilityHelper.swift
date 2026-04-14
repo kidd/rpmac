@@ -2,24 +2,29 @@ import Foundation
 import ApplicationServices
 import AppKit
 
-/// Observes AX window-created and window-destroyed notifications for a single app.
+/// Observes AX window-created, window-destroyed, and focus-changed notifications for a single app.
 class AppWindowObserver {
     let pid: pid_t
     let observer: AXObserver
     let createCallback: (AXUIElement) -> Void
     let destroyCallback: (AXUIElement) -> Void
+    let focusCallback: (AXUIElement) -> Void
 
-    init?(pid: pid_t, onCreate: @escaping (AXUIElement) -> Void, onDestroy: @escaping (AXUIElement) -> Void) {
+    init?(pid: pid_t, onCreate: @escaping (AXUIElement) -> Void, onDestroy: @escaping (AXUIElement) -> Void, onFocus: @escaping (AXUIElement) -> Void) {
         self.pid = pid
         self.createCallback = onCreate
         self.destroyCallback = onDestroy
+        self.focusCallback = onFocus
 
         var obs: AXObserver?
         let err = AXObserverCreate(pid, { (_: AXObserver, element: AXUIElement, notification: CFString, refcon: UnsafeMutableRawPointer?) in
             guard let refcon = refcon else { return }
             let observer = Unmanaged<AppWindowObserver>.fromOpaque(refcon).takeUnretainedValue()
-            if notification as String == kAXUIElementDestroyedNotification as String {
+            let name = notification as String
+            if name == kAXUIElementDestroyedNotification as String {
                 observer.destroyCallback(element)
+            } else if name == kAXFocusedWindowChangedNotification as String {
+                observer.focusCallback(element)
             } else {
                 observer.createCallback(element)
             }
@@ -31,11 +36,12 @@ class AppWindowObserver {
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         AXObserverAddNotification(observer, appRef, kAXWindowCreatedNotification as CFString, refcon)
         AXObserverAddNotification(observer, appRef, kAXUIElementDestroyedNotification as CFString, refcon)
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        AXObserverAddNotification(observer, appRef, kAXFocusedWindowChangedNotification as CFString, refcon)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
     deinit {
-        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 }
 
@@ -44,11 +50,13 @@ class WindowCreationWatcher {
     private var observers: [pid_t: AppWindowObserver] = [:]
     private var createCallback: (AXUIElement, pid_t) -> Void
     private var destroyCallback: (AXUIElement, pid_t) -> Void
+    private var focusCallback: (AXUIElement, pid_t) -> Void
     private var workspaceObserver: NSObjectProtocol?
 
-    init(onCreate: @escaping (AXUIElement, pid_t) -> Void, onDestroy: @escaping (AXUIElement, pid_t) -> Void) {
+    init(onCreate: @escaping (AXUIElement, pid_t) -> Void, onDestroy: @escaping (AXUIElement, pid_t) -> Void, onFocus: @escaping (AXUIElement, pid_t) -> Void) {
         self.createCallback = onCreate
         self.destroyCallback = onDestroy
+        self.focusCallback = onFocus
     }
 
     func start() {
@@ -81,9 +89,11 @@ class WindowCreationWatcher {
         guard observers[pid] == nil else { return }
         let createCb = self.createCallback
         let destroyCb = self.destroyCallback
+        let focusCb = self.focusCallback
         if let obs = AppWindowObserver(pid: pid,
                                        onCreate: { element in createCb(element, pid) },
-                                       onDestroy: { element in destroyCb(element, pid) }) {
+                                       onDestroy: { element in destroyCb(element, pid) },
+                                       onFocus: { element in focusCb(element, pid) }) {
             observers[pid] = obs
         }
     }

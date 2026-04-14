@@ -28,8 +28,41 @@ class WindowManager {
     /// When true, warp mouse cursor to the center of the focused window on raise
     var warp: Bool = false
 
+    /// When true, clicking on a frame focuses it
+    var clickToFocus: Bool = false
+
     /// Windows not currently assigned to any frame
     var unmanaged: [WindowRef] = []
+
+    // MARK: - Window numbering
+
+    /// Maps window number → window ref. Every managed window gets a persistent number.
+    private var windowNumbers: [Int: WindowRef] = [:]
+
+    /// Assign the lowest available number to a window. Returns the assigned number.
+    @discardableResult
+    func assignNumber(to win: WindowRef) -> Int {
+        // Don't double-assign
+        if let existing = windowNumbers.first(where: { $0.value == win }) {
+            return existing.key
+        }
+        var n = 0
+        while windowNumbers[n] != nil { n += 1 }
+        windowNumbers[n] = win
+        return n
+    }
+
+    /// Remove the number for a window.
+    func freeNumber(for win: WindowRef) {
+        if let key = windowNumbers.first(where: { $0.value == win })?.key {
+            windowNumbers.removeValue(forKey: key)
+        }
+    }
+
+    /// Get the number for a window, if it has one.
+    func number(for win: WindowRef) -> Int? {
+        windowNumbers.first(where: { $0.value == win })?.key
+    }
 
     /// Current screen state
     var current: ScreenState { screens[currentScreenIndex] }
@@ -136,11 +169,11 @@ class WindowManager {
     }
 
     private func showFocusOverlay() {
-        let leaves = root.leaves
-        guard let idx = leaves.firstIndex(where: { $0 === focused }) else { return }
+        guard root.leaves.contains(where: { $0 === focused }) else { return }
         let winTitle = focused.window?.title ?? "(empty)"
+        let winNum = focused.window.flatMap({ number(for: $0) }).map({ "\($0)" }) ?? "-"
         let screenLabel = screens.count > 1 ? "S\(currentScreenIndex):" : ""
-        let msg = "\(screenLabel)[\(idx)] \(winTitle)"
+        let msg = "\(screenLabel)\(winNum) \(winTitle)"
         overlay.show(message: msg, in: focused.rect)
         overlay.showBorder(around: focused.rect)
     }
@@ -248,6 +281,7 @@ class WindowManager {
 
         let w = WindowCreationWatcher(
             onCreate: { [weak self] element, pid in
+
                 guard let self = self else { return }
 
                 // Skip pre-existing windows
@@ -264,7 +298,8 @@ class WindowManager {
                 }
                 if self.unmanaged.contains(where: { $0 == wref }) { return }
 
-                print("New window: \(wref.title ?? "(untitled)")")
+                let n = self.assignNumber(to: wref)
+                print("New window #\(n): \(wref.title ?? "(untitled)")")
 
                 // Place into focused frame, pushing current window to unmanaged
                 if let current = self.focused.window {
@@ -276,6 +311,8 @@ class WindowManager {
             onDestroy: { [weak self] element, pid in
                 guard let self = self else { return }
                 let wref = WindowRef(pid: pid, element: element)
+
+                self.freeNumber(for: wref)
 
                 // Remove from frames
                 for screen in self.screens {
@@ -304,6 +341,22 @@ class WindowManager {
                 if self.lastWindow == wref {
                     self.lastWindow = nil
                 }
+            },
+            onFocus: { [weak self] element, pid in
+                guard let self = self else { return }
+                let wref = WindowRef(pid: pid, element: element)
+
+                // Find the frame holding this window — if found, update focus
+                for (i, screen) in self.screens.enumerated() {
+                    if let frame = screen.root.leaves.first(where: { $0.window == wref }) {
+                        if frame !== self.focused || i != self.currentScreenIndex {
+                            self.currentScreenIndex = i
+                            self.setFocus(frame)
+                        }
+                        return
+                    }
+                }
+                // Window not in any frame — ignore (user can explicitly capture)
             }
         )
         w.start()
@@ -322,6 +375,7 @@ class WindowManager {
         var remaining: [WindowRef] = []
 
         for win in windows {
+            assignNumber(to: win)
             if let winFrame = win.frame {
                 let winCenter = CGPoint(x: winFrame.midX, y: winFrame.midY)
                 if let screenIdx = screens.firstIndex(where: { $0.rect.contains(winCenter) }),
@@ -450,6 +504,7 @@ class WindowManager {
             print("No focused window to capture")
             return
         }
+        assignNumber(to: win)
         // Remove from any frame on any screen
         for screen in screens {
             for leaf in screen.root.leaves {
@@ -476,6 +531,7 @@ class WindowManager {
             print("No window in focused frame")
             return
         }
+        freeNumber(for: win)
         let app = NSRunningApplication(processIdentifier: win.pid)
         focused.content = .empty
         if !unmanaged.isEmpty {
@@ -483,6 +539,70 @@ class WindowManager {
         }
         app?.terminate()
         applyLayout()
+    }
+
+    // MARK: - Select by number
+
+    func selectWindow(number n: Int) {
+        guard let win = windowNumbers[n] else {
+            print("No window with number \(n)")
+            return
+        }
+
+        // Already in the focused frame? Nothing to do.
+        if focused.window == win { return }
+
+        // Check if it's in a frame on any screen — swap with focused
+        for screen in screens {
+            if let frame = screen.root.leaves.first(where: { $0.window == win }) {
+                let currentWin = focused.window
+                focused.content = .window(win)
+                frame.content = currentWin.map { .window($0) } ?? .empty
+                setFocus(focused)
+                applyAllLayouts()
+                return
+            }
+        }
+
+        // Must be in unmanaged — pull it into the focused frame
+        if let idx = unmanaged.firstIndex(where: { $0 == win }) {
+            unmanaged.remove(at: idx)
+            if let current = focused.window {
+                lastWindow = current
+                unmanaged.insert(current, at: 0)
+            }
+            focused.content = .window(win)
+            applyLayout()
+        }
+    }
+
+    func windowList() -> String {
+        var lines: [String] = []
+        let sorted = windowNumbers.sorted(by: { $0.key < $1.key })
+        for (n, win) in sorted {
+            let title = win.title ?? "(untitled)"
+            let location: String
+            if focused.window == win {
+                location = "*"
+            } else {
+                var inFrame = false
+                for screen in screens {
+                    if screen.root.leaves.contains(where: { $0.window == win }) {
+                        inFrame = true
+                        break
+                    }
+                }
+                location = inFrame ? "f" : "-"
+            }
+            lines.append("\(n)\(location) \(title)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func showWindowList() {
+        let list = windowList()
+        print(list)
+        overlay.show(message: list, in: focused.rect)
     }
 
     // MARK: - Layout
@@ -540,9 +660,14 @@ class WindowManager {
             for (i, leaf) in leaves.enumerated() {
                 let fmarker = (leaf === screen.focused) ? " *" : ""
                 let winTitle = leaf.window?.title ?? "(empty)"
-                print("  [\(i)\(fmarker)] \(Int(leaf.rect.width))x\(Int(leaf.rect.height))+\(Int(leaf.rect.origin.x))+\(Int(leaf.rect.origin.y)) — \(winTitle)")
+                let winNum = leaf.window.flatMap({ number(for: $0) }).map({ "#\($0)" }) ?? ""
+                print("  [\(i)\(fmarker)] \(winNum) \(Int(leaf.rect.width))x\(Int(leaf.rect.height))+\(Int(leaf.rect.origin.x))+\(Int(leaf.rect.origin.y)) — \(winTitle)")
             }
         }
         print("Unmanaged: \(unmanaged.count)")
+        for win in unmanaged {
+            let winNum = number(for: win).map({ "#\($0)" }) ?? "?"
+            print("  \(winNum) \(win.title ?? "(untitled)")")
+        }
     }
 }

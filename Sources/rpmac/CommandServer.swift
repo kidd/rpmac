@@ -133,6 +133,8 @@ class CommandServer {
             wm.printStatus()
         case "status", "info":
             wm.printStatus()
+        case "windows":
+            print(wm.windowList())
         case "reload":
             print("Reloading ~/.rpmacrc...")
             let config = Config()
@@ -146,7 +148,22 @@ class CommandServer {
             unlink(socketPath)
             exit(0)
         default:
-            print("Unknown command: \(cmd)")
+            if cmd.hasPrefix("exec ") {
+                let shellCmd = String(cmd.dropFirst(5))
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                process.arguments = ["-c", shellCmd]
+                do {
+                    try process.run()
+                } catch {
+                    print("exec failed: \(error)")
+                }
+            } else if cmd.hasPrefix("select "), let n = Int(cmd.dropFirst(7).trimmingCharacters(in: .whitespaces)) {
+                wm.selectWindow(number: n)
+                wm.printStatus()
+            } else {
+                print("Unknown command: \(cmd)")
+            }
         }
     }
 

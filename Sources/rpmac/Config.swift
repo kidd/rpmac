@@ -112,6 +112,10 @@ class Config {
                 let on = value == "1" || value.lowercased() == "true"
                 print("  warp = \(on)")
                 wm.warp = on
+            case "clicktofocus":
+                let on = value == "1" || value.lowercased() == "true"
+                print("  clicktofocus = \(on)")
+                wm.clickToFocus = on
             case "click-to-focus":
                 let app = value.lowercased()
                 WindowRef.clickToFocusApps.insert(app)

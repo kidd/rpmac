@@ -1,6 +1,9 @@
 import Foundation
 import AppKit
 
+// Disable stdout buffering so output appears immediately when piped
+setbuf(stdout, nil)
+
 // Initialize NSApplication so we can create overlay windows.
 // We don't activate it — rpmac stays in the background.
 let app = NSApplication.shared
