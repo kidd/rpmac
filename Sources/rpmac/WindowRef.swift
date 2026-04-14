@@ -32,14 +32,23 @@ struct WindowRef: Equatable {
         return value as? String
     }
 
-    /// Whether the window is a normal, resizable window (not a menu, dialog, etc.)
+    /// Whether the window is a normal, manageable window (not a menu, tooltip, etc.)
+    /// Accepts AXStandardWindow and AXDialog with a valid frame — Java/Qt apps
+    /// often report main windows as AXDialog.
     var isNormalWindow: Bool {
         var value: AnyObject?
 
-        // Check subrole
         let roleResult = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &value)
         guard roleResult == .success, let subrole = value as? String else { return false }
-        return subrole == kAXStandardWindowSubrole as String
+
+        if subrole == kAXStandardWindowSubrole as String {
+            return true
+        }
+        // Java/Qt apps (e.g. IBKR Desktop) report main windows as AXDialog
+        if subrole == "AXDialog", frame != nil {
+            return true
+        }
+        return false
     }
 
     /// Get current position and size
