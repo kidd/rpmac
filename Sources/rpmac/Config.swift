@@ -29,6 +29,7 @@ class Config {
         var unbindings: [String] = []
         var escapeKey: String? = nil
         var settings: [(String, String)] = []
+        var appRemaps: [(app: String, from: String, to: String)] = []
         var startupCommands: [String] = []
     }
 
@@ -62,6 +63,18 @@ class Config {
                 let name = parts[1]
                 let value = parts[2...].joined(separator: " ")
                 config.settings.append((name, value))
+
+            case "appremap" where parts.count >= 4:
+                // appremap "App Name" from-key to-key
+                // Parse quoted app name
+                let rest = line.dropFirst("appremap".count).trimmingCharacters(in: .whitespaces)
+                if let (appName, remainder) = parseQuotedOrWord(rest) {
+                    let remapParts = remainder.trimmingCharacters(in: .whitespaces)
+                        .components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                    if remapParts.count >= 2 {
+                        config.appRemaps.append((app: appName, from: remapParts[0], to: remapParts[1]))
+                    }
+                }
 
             default:
                 // Treat as a startup command
@@ -112,6 +125,9 @@ class Config {
                 let on = value == "1" || value.lowercased() == "true"
                 print("  warp = \(on)")
                 wm.warp = on
+            case "framesels":
+                print("  framesels = \(value)")
+                wm.framesels = value
             case "clicktofocus":
                 let on = value == "1" || value.lowercased() == "true"
                 print("  clicktofocus = \(on)")
@@ -149,6 +165,15 @@ class Config {
             }
         }
 
+        // App remaps
+        for remap in parsed.appRemaps {
+            if let (fromKey, fromMods) = parseKeySpec(remap.from),
+               let (toKey, toMods) = parseKeySpec(remap.to) {
+                keyBinder.addRemap(app: remap.app, fromKey: fromKey, fromMods: fromMods, toKey: toKey, toMods: toMods)
+                print("  appremap \"\(remap.app)\" \(remap.from) → \(remap.to)")
+            }
+        }
+
         // Run startup commands
         for cmd in parsed.startupCommands {
             print("  > \(cmd)")
@@ -156,9 +181,32 @@ class Config {
         }
     }
 
+    // MARK: - String parsing
+
+    /// Parse a quoted string or a single word from the start of a string.
+    /// Returns (parsed value, remainder) or nil if empty.
+    private func parseQuotedOrWord(_ s: String) -> (String, String)? {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("\"") {
+            let rest = trimmed.dropFirst()
+            if let endQuote = rest.firstIndex(of: "\"") {
+                let value = String(rest[rest.startIndex..<endQuote])
+                let remainder = String(rest[rest.index(after: endQuote)...])
+                return (value, remainder)
+            }
+            return (String(rest), "")
+        } else {
+            let parts = trimmed.split(separator: " ", maxSplits: 1)
+            let value = String(parts[0])
+            let remainder = parts.count > 1 ? String(parts[1]) : ""
+            return (value, remainder)
+        }
+    }
+
     // MARK: - Key parsing
 
-    /// Parse a key spec like "n", "C-n", "S-tab", "C-S-t" into (keyCode, modifiers)
+    /// Parse a key spec like "n", "C-n", "S-tab", "M-b", "Cmd-d" into (keyCode, modifiers)
     func parseKeySpec(_ spec: String) -> (CGKeyCode, CGEventFlags)? {
         var remaining = spec
         var flags: CGEventFlags = []
@@ -170,6 +218,12 @@ class Config {
             } else if remaining.hasPrefix("S-") {
                 flags.insert(.maskShift)
                 remaining = String(remaining.dropFirst(2))
+            } else if remaining.hasPrefix("M-") {
+                flags.insert(.maskAlternate)
+                remaining = String(remaining.dropFirst(2))
+            } else if remaining.hasPrefix("Cmd-") {
+                flags.insert(.maskCommand)
+                remaining = String(remaining.dropFirst(4))
             } else {
                 break
             }
@@ -196,7 +250,7 @@ class Config {
             "4": kVK_ANSI_4, "5": kVK_ANSI_5, "6": kVK_ANSI_6, "7": kVK_ANSI_7,
             "8": kVK_ANSI_8, "9": kVK_ANSI_9,
             "space": kVK_Space, "tab": kVK_Tab, "return": kVK_Return,
-            "escape": kVK_Escape, "delete": kVK_Delete,
+            "escape": kVK_Escape, "delete": kVK_Delete, "forwarddelete": kVK_ForwardDelete,
             "semicolon": kVK_ANSI_Semicolon, "colon": kVK_ANSI_Semicolon,
             "slash": kVK_ANSI_Slash, "backslash": kVK_ANSI_Backslash,
             "comma": kVK_ANSI_Comma, "period": kVK_ANSI_Period,

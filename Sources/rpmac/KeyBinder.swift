@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import Carbon.HIToolbox
+import AppKit
 
 /// Ratpoison-style prefix key + command key bindings using CGEventTap.
 /// Default prefix: Ctrl-t (like ratpoison)
@@ -10,11 +11,28 @@ class KeyBinder {
     let wm: WindowManager
     var commandServer: CommandServer?
     private var waitingForCommand = false
+    private var waitingForFselect = false
+    private var fselectLabels: [(label: Character, rect: CGRect, frame: Frame, screenIndex: Int)] = []
     private var promptActive = false
     private var eventTap: CFMachPort?
 
     // Prefix key: Ctrl-t
     var prefixKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_T)
+
+    // Per-app key remaps (processed before prefix key handling)
+    struct Remap {
+        let app: String       // lowercased app name
+        let fromKey: CGKeyCode
+        let fromMods: CGEventFlags
+        let toKey: CGKeyCode
+        let toMods: CGEventFlags
+    }
+
+    var remaps: [Remap] = []
+
+    func addRemap(app: String, fromKey: CGKeyCode, fromMods: CGEventFlags, toKey: CGKeyCode, toMods: CGEventFlags) {
+        remaps.append(Remap(app: app.lowercased(), fromKey: fromKey, fromMods: fromMods, toKey: toKey, toMods: toMods))
+    }
 
     // Command bindings: key -> action
     struct Binding {
@@ -41,9 +59,10 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_Q): Binding(key: CGKeyCode(kVK_ANSI_Q), action: { $0.only() }, description: "only (remove all other frames)"),
             CGKeyCode(kVK_ANSI_O): Binding(key: CGKeyCode(kVK_ANSI_O), action: { $0.focusNext() }, description: "next frame"),
 
-            // Window list / swap
+            // Window list / swap / fselect
             CGKeyCode(kVK_ANSI_W): Binding(key: CGKeyCode(kVK_ANSI_W), action: { $0.showWindowList() }, description: "window list"),
             CGKeyCode(kVK_ANSI_K): Binding(key: CGKeyCode(kVK_ANSI_K), action: { $0.killWindow() }, description: "kill window"),
+            CGKeyCode(kVK_ANSI_F): Binding(key: CGKeyCode(kVK_ANSI_F), action: { _ in self.startFselect() }, description: "fselect"),
 
             // Screen navigation
             CGKeyCode(kVK_ANSI_Period): Binding(key: CGKeyCode(kVK_ANSI_Period), action: { $0.focusNextScreen() }, description: "next screen"),
@@ -171,6 +190,52 @@ class KeyBinder {
             return Unmanaged.passUnretained(event)
         }
 
+        // fselect mode: waiting for a framesel character to focus a frame
+        if waitingForFselect {
+            waitingForFselect = false
+            let savedLabels = fselectLabels
+            fselectLabels = []
+            wm.overlay.hideNumberLabels()
+
+            // Get the typed character from the event
+            var length: Int = 0
+            var chars = [UniChar](repeating: 0, count: 4)
+            event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &chars)
+            let typed: Character? = length > 0 ? Character(Unicode.Scalar(chars[0])!) : nil
+            if let ch = typed, let entry = savedLabels.first(where: { $0.label == ch }) {
+                print(">> fselect \(ch)")
+                wm.currentScreenIndex = entry.screenIndex
+                wm.focusFrame(entry.frame)
+                entry.frame.window?.raise(warp: wm.warp)
+                wm.printStatus()
+            } else {
+                print(">> fselect cancelled")
+            }
+            return nil
+        }
+
+        // Per-app remaps (before prefix handling)
+        if !waitingForCommand && !remaps.isEmpty {
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            let flags = event.flags
+            if let appName = NSWorkspace.shared.frontmostApplication?.localizedName?.lowercased() {
+                for remap in remaps {
+                    if remap.app == appName
+                        && remap.fromKey == keyCode
+                        && flags.contains(remap.fromMods)
+                    {
+                        event.setIntegerValueField(.keyboardEventKeycode, value: Int64(remap.toKey))
+                        // Clear the original modifier and set the target modifier
+                        var newFlags = flags
+                        newFlags.subtract(remap.fromMods)
+                        newFlags.formUnion(remap.toMods)
+                        event.flags = newFlags
+                        return Unmanaged.passUnretained(event)
+                    }
+                }
+            }
+        }
+
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
 
@@ -244,6 +309,13 @@ class KeyBinder {
                 return nil
             }
 
+            // ! (Shift-1) → exec prompt
+            if keyCode == CGKeyCode(kVK_ANSI_1) && flags.contains(.maskShift) {
+                print(">> exec prompt")
+                showCommandPrompt(prefill: "exec ")
+                return nil
+            }
+
             // Look up binding by keyCode only — works whether ctrl is held or not
             if let binding = bindings[keyCode] {
                 print(">> \(binding.description)")
@@ -268,9 +340,9 @@ class KeyBinder {
         return Unmanaged.passUnretained(event)
     }
 
-    private func showCommandPrompt() {
+    private func showCommandPrompt(prefill: String = "") {
         promptActive = true
-        wm.commandPrompt.show { [weak self] cmd in
+        wm.commandPrompt.show(prefill: prefill) { [weak self] cmd in
             guard let self = self else { return }
             self.promptActive = false
             if !cmd.isEmpty {
@@ -278,6 +350,17 @@ class KeyBinder {
                 self.commandServer?.handleCommand(cmd)
             }
         }
+    }
+
+    private func startFselect() {
+        let labels = wm.fselectFrameLabels()
+        guard !labels.isEmpty else {
+            print("No frames to select")
+            return
+        }
+        fselectLabels = labels
+        waitingForFselect = true
+        wm.overlay.showNumberLabels(labels.map { (String($0.label), $0.rect) })
     }
 
     func printBindings() {
@@ -304,6 +387,7 @@ class KeyBinder {
             CGKeyCode(kVK_ANSI_W): "w",
             CGKeyCode(kVK_ANSI_I): "i",
             CGKeyCode(kVK_ANSI_B): "b",
+            CGKeyCode(kVK_ANSI_F): "f",
             CGKeyCode(kVK_ANSI_K): "k",
             CGKeyCode(kVK_ANSI_M): "m",
             CGKeyCode(kVK_ANSI_Period): ".",

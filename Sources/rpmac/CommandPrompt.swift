@@ -27,23 +27,27 @@ class CommandPrompt: NSObject, NSTextFieldDelegate {
         "capture", "release",
         "undo", "redo",
         "rescreen", "reload",
-        "status", "windows", "select", "exec",
+        "status", "windows", "select", "fselect", "exec",
         "quit",
     ]
 
-    func show(onCommand: @escaping (String) -> Void) {
+    func show(prefill: String = "", onCommand: @escaping (String) -> Void) {
         self.onCommand = onCommand
 
         if window == nil {
             setupWindow()
         }
 
-        textField?.stringValue = ""
+        textField?.stringValue = prefill
         completionLabel?.stringValue = ""
         // Activate our app and make window key so text field receives input
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(textField)
+        // Move cursor to end (avoid selecting prefilled text)
+        if let tf = textField, let editor = tf.currentEditor() {
+            editor.selectedRange = NSRange(location: tf.stringValue.count, length: 0)
+        }
     }
 
     func hide() {

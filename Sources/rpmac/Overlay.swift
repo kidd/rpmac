@@ -205,6 +205,66 @@ class Overlay {
         cursorWindow?.orderOut(nil)
     }
 
+    // MARK: - fselect number labels
+
+    private var numberWindows: [NSWindow] = []
+
+    /// Show a large character label centered on each rect (in AX coordinates).
+    func showNumberLabels(_ labels: [(label: String, rect: CGRect)]) {
+        hideNumberLabels()
+        for (text, rect) in labels {
+            let flipped = flipToCocoaCoordinates(rect)
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.level = .screenSaver
+            w.ignoresMouseEvents = true
+            w.hasShadow = false
+            w.collectionBehavior = [.canJoinAllSpaces, .stationary]
+
+            let label = NSTextField(labelWithString: text)
+            label.font = NSFont.monospacedSystemFont(ofSize: 72, weight: .bold)
+            label.textColor = fgColor
+            label.alignment = .center
+            label.backgroundColor = .clear
+            label.sizeToFit()
+
+            let pad: CGFloat = 20
+            let bgWidth = label.frame.width + pad * 2
+            let bgHeight = label.frame.height + pad
+            let bg = NSView(frame: NSRect(x: 0, y: 0, width: bgWidth, height: bgHeight))
+            bg.wantsLayer = true
+            bg.layer?.backgroundColor = bgColor.cgColor
+            bg.layer?.cornerRadius = 14
+
+            label.frame.origin = NSPoint(
+                x: (bgWidth - label.frame.width) / 2,
+                y: (bgHeight - label.frame.height) / 2
+            )
+            bg.addSubview(label)
+
+            w.setContentSize(NSSize(width: bgWidth, height: bgHeight))
+            w.contentView = bg
+            w.setFrameOrigin(NSPoint(
+                x: flipped.midX - bgWidth / 2,
+                y: flipped.midY - bgHeight / 2
+            ))
+            w.orderFrontRegardless()
+            numberWindows.append(w)
+        }
+    }
+
+    /// Remove all fselect number labels.
+    func hideNumberLabels() {
+        for w in numberWindows { w.orderOut(nil) }
+        numberWindows.removeAll()
+    }
+
     /// Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin).
     /// In multi-monitor setups, the AX coordinate system uses the primary screen's top-left as (0,0).
     /// Cocoa uses the primary screen's bottom-left as (0,0). Both share the same X axis.

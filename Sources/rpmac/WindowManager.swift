@@ -31,6 +31,9 @@ class WindowManager {
     /// When true, clicking on a frame focuses it
     var clickToFocus: Bool = false
 
+    /// Characters used to label frames in fselect (like ratpoison's framesels)
+    var framesels: String = "0123456789"
+
     /// Windows not currently assigned to any frame
     var unmanaged: [WindowRef] = []
 
@@ -159,6 +162,11 @@ class WindowManager {
     }
 
     // MARK: - Focus helpers
+
+    /// Public entry point for focusing a frame (used by fselect).
+    func focusFrame(_ frame: Frame) {
+        setFocus(frame)
+    }
 
     private func setFocus(_ frame: Frame) {
         if let currentWin = focused.window, focused !== frame || frame.window != currentWin {
@@ -672,6 +680,27 @@ class WindowManager {
         }
     }
 
+    /// Focus a window in place — switch to its frame/screen without moving it.
+    func focusWindowInPlace(number n: Int) {
+        guard let win = windowNumbers[n] else {
+            print("No window with number \(n)")
+            return
+        }
+
+        // Find the frame and screen containing this window
+        for (i, screen) in screens.enumerated() {
+            if let frame = screen.root.leaves.first(where: { $0.window == win }) {
+                currentScreenIndex = i
+                setFocus(frame)
+                win.raise(warp: warp)
+                return
+            }
+        }
+
+        // Unmanaged — just raise it
+        win.raise(warp: warp)
+    }
+
     func windowList() -> String {
         var lines: [String] = []
         let sorted = windowNumbers.sorted(by: { $0.key < $1.key })
@@ -699,6 +728,21 @@ class WindowManager {
         let list = windowList()
         print(list)
         overlay.show(message: list, in: focused.rect)
+    }
+
+    /// Returns (framesel character, rect, frame) for each leaf frame across all screens.
+    /// Characters are assigned from the `framesels` string in order.
+    func fselectFrameLabels() -> [(label: Character, rect: CGRect, frame: Frame, screenIndex: Int)] {
+        var result: [(label: Character, rect: CGRect, frame: Frame, screenIndex: Int)] = []
+        var charIdx = framesels.startIndex
+        for (si, screen) in screens.enumerated() {
+            for leaf in screen.root.leaves {
+                guard charIdx < framesels.endIndex else { return result }
+                result.append((framesels[charIdx], leaf.rect, leaf, si))
+                charIdx = framesels.index(after: charIdx)
+            }
+        }
+        return result
     }
 
     // MARK: - Layout
