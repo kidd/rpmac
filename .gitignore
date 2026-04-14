@@ -1,0 +1,4 @@
+.build/
+.claude/settings.local.json
+rpmac.app/Contents/MacOS/rpmac
+.DS_Store
